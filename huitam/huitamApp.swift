@@ -1,32 +1,32 @@
-//
-//  huitamApp.swift
-//  huitam
-//
-//  Created by Alexey Mashkov on 29.04.2026.
-//
-
 import SwiftUI
-import SwiftData
 
 @main
 struct huitamApp: App {
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Item.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            fatalError("Could not create ModelContainer: \(error)")
-        }
-    }()
+    @State private var dependencies = AppDependencyContainer.mock()
+    @State private var appearance: AppAppearanceViewModel?
 
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+                if let appearance {
+                    ContentView()
+                        .environment(\.appDependencies, dependencies)
+                        .environment(\.appTintColor, appearance.tintColor)
+                        .preferredColorScheme(appearance.colorScheme)
+                        .tint(appearance.tintColor)
+                        .animation(.easeInOut(duration: 0.28), value: appearance.settings)
+                } else {
+                    ContentView()
+                        .environment(\.appDependencies, dependencies)
+                        .environment(\.appTintColor, AppTintPreference.blue.color)
+                }
+            }
+            .task {
+                if appearance == nil {
+                    appearance = AppAppearanceViewModel(settingsService: dependencies.settingsService)
+                }
+                await appearance?.start()
+            }
         }
-        .modelContainer(sharedModelContainer)
     }
 }

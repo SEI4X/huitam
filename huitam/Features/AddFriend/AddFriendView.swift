@@ -1,0 +1,89 @@
+import SwiftUI
+
+struct AddFriendView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var viewModel: AddFriendViewModel
+
+    init(container: AppDependencyContainer) {
+        _viewModel = State(initialValue: AddFriendViewModel(friendService: container.friendService))
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    TextField("Nickname", text: Binding(
+                        get: { viewModel.query },
+                        set: { viewModel.query = $0 }
+                    ))
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .onSubmit {
+                        Task { await viewModel.search() }
+                    }
+
+                    Button {
+                        Task { await viewModel.search() }
+                    } label: {
+                        Label("Search", systemImage: "magnifyingglass")
+                    }
+                }
+
+                Section {
+                    Button {
+                        Task { await viewModel.loadSharePayload() }
+                    } label: {
+                        Label("Share My Nickname", systemImage: "square.and.arrow.up")
+                    }
+
+                    Button {
+                        Task { await viewModel.scanQRCode() }
+                    } label: {
+                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                    }
+                }
+
+                if let payload = viewModel.sharePayload {
+                    Section("Share") {
+                        Text(payload)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                if let scannedFriend = viewModel.scannedFriend {
+                    Section("Scanned") {
+                        FriendSearchRowView(result: scannedFriend)
+                    }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
+                Section("Results") {
+                    if viewModel.results.isEmpty && viewModel.hasSearched {
+                        ContentUnavailableView("No Results", systemImage: "person.crop.circle.badge.questionmark")
+                            .listRowSeparator(.hidden)
+                    } else {
+                        ForEach(viewModel.results) { result in
+                            FriendSearchRowView(result: result)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Add Friend")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Close") {
+                        dismiss()
+                    }
+                }
+            }
+            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.results)
+            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.sharePayload)
+            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.scannedFriend)
+        }
+    }
+}
