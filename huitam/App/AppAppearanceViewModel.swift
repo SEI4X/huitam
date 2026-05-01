@@ -6,7 +6,7 @@ import Observation
 final class AppAppearanceViewModel {
     private let settingsService: SettingsServicing
 
-    private(set) var settings = MockAppData.settings
+    private(set) var settings = AppDefaults.settings
 
     init(settingsService: SettingsServicing) {
         self.settingsService = settingsService

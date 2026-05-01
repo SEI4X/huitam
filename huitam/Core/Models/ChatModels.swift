@@ -8,6 +8,34 @@ struct ChatSummary: Identifiable, Hashable {
     var unreadCount: Int
     var nativeLanguage: AppLanguage
     var practiceLanguage: AppLanguage?
+    var currentUserRole: ChatParticipantRole = .learner(.english)
+    var participantRole: ChatParticipantRole = .companion
+}
+
+enum ChatParticipantRole: Hashable {
+    case learner(AppLanguage)
+    case companion
+
+    var isLearner: Bool {
+        switch self {
+        case .learner: true
+        case .companion: false
+        }
+    }
+
+    var learningLanguage: AppLanguage? {
+        switch self {
+        case let .learner(language): language
+        case .companion: nil
+        }
+    }
+
+    var displayName: String {
+        switch self {
+        case let .learner(language): "Learning \(language.displayName)"
+        case .companion: "Just chatting"
+        }
+    }
 }
 
 enum MessageDirection: Hashable {

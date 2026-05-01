@@ -12,7 +12,7 @@ final class SettingsViewModel {
         learningLanguage: .language(.english),
         theme: .system,
         tint: .blue,
-        notificationsEnabled: true
+        notificationsEnabled: false
     )
     private(set) var errorMessage: String?
 
@@ -58,7 +58,7 @@ final class SettingsViewModel {
 
     func updateNotifications(enabled: Bool) async {
         var updated = settings
-        updated.notificationsEnabled = enabled
+        updated.notificationsEnabled = await NotificationPermissionCenter.updateRegistration(enabled: enabled)
         await persist(updated)
     }
 

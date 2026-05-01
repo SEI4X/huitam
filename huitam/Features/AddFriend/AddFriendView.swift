@@ -4,14 +4,26 @@ struct AddFriendView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: AddFriendViewModel
+    @State private var isPracticeChatPresented = false
+
+    private let container: AppDependencyContainer
 
     init(container: AppDependencyContainer) {
+        self.container = container
         _viewModel = State(initialValue: AddFriendViewModel(friendService: container.friendService))
     }
 
     var body: some View {
         NavigationStack {
             List {
+                Section {
+                    Button {
+                        isPracticeChatPresented = true
+                    } label: {
+                        Label("Create Practice Chat", systemImage: "link.badge.plus")
+                    }
+                }
+
                 Section {
                     TextField("Nickname", text: Binding(
                         get: { viewModel.query },
@@ -84,6 +96,9 @@ struct AddFriendView: View {
             .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.results)
             .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.sharePayload)
             .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.scannedFriend)
+            .sheet(isPresented: $isPracticeChatPresented) {
+                CreatePracticeChatView(friendService: container.friendService)
+            }
         }
     }
 }

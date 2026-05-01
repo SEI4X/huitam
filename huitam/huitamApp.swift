@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct huitamApp: App {
-    @State private var dependencies = AppDependencyContainer.mock()
+    @UIApplicationDelegateAdaptor(FirebaseAppDelegate.self) private var appDelegate
+    @State private var dependencies = AppDependencyContainer.production()
     @State private var appearance: AppAppearanceViewModel?
 
     var body: some Scene {

@@ -1,0 +1,15 @@
+{
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "functions": [
+    {
+      "source": "firebase/functions",
+      "codebase": "default",
+      "predeploy": [
+        "cd \"$RESOURCE_DIR\" && ./node_modules/.bin/tsc"
+      ]
+    }
+  ]
+}

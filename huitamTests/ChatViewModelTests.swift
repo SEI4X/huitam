@@ -10,7 +10,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
 
         await viewModel.load()
@@ -26,7 +27,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
         viewModel.draft = "I can meet after work"
 
@@ -44,7 +46,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
         viewModel.draft = "   "
 
@@ -60,7 +63,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
         await viewModel.load()
         let message = try XCTUnwrap(viewModel.messages.first)
@@ -77,7 +81,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
         await viewModel.load()
         let message = try XCTUnwrap(viewModel.messages.first)
@@ -94,7 +99,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
         await viewModel.load()
         let message = try XCTUnwrap(viewModel.messages.first)
@@ -114,12 +120,71 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
 
         await viewModel.loadSettings()
 
         XCTAssertFalse(viewModel.canUseStudyFeatures)
+    }
+
+    func testFreeLearnerNeedsSubscriptionAndCannotUseStudyFeatures() async throws {
+        let services = TestServices()
+        services.subscription.entitlement = .free
+        let viewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+
+        await viewModel.load()
+
+        XCTAssertTrue(viewModel.needsSubscription)
+        XCTAssertFalse(viewModel.canUseStudyFeatures)
+    }
+
+    func testCompanionDoesNotNeedSubscription() async throws {
+        let services = TestServices()
+        services.subscription.entitlement = .free
+        var chat = MockAppData.chats[0]
+        chat.currentUserRole = .companion
+        let viewModel = ChatViewModel(
+            chat: chat,
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+
+        await viewModel.load()
+
+        XCTAssertFalse(viewModel.needsSubscription)
+        XCTAssertFalse(viewModel.canUseStudyFeatures)
+    }
+
+    func testStartingTrialUnlocksLearnerStudyFeatures() async throws {
+        let services = TestServices()
+        services.subscription.entitlement = .free
+        let viewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+        await viewModel.load()
+
+        await viewModel.startLearnerTrial()
+
+        XCTAssertFalse(viewModel.needsSubscription)
+        XCTAssertTrue(viewModel.canUseStudyFeatures)
+        XCTAssertEqual(services.subscription.startedTrialCount, 1)
     }
 
     func testAISuggestionUpdatesDraft() async throws {
@@ -129,7 +194,8 @@ final class ChatViewModelTests: XCTestCase {
             chatService: services.chat,
             studyCardService: services.cards,
             aiAssistService: services.ai,
-            settingsService: services.settings
+            settingsService: services.settings,
+            subscriptionService: services.subscription
         )
 
         await viewModel.suggestReply()
@@ -144,4 +210,5 @@ private final class TestServices {
     let cards = RecordingStudyCardService()
     let ai = RecordingAIAssistService()
     let settings = RecordingSettingsService()
+    let subscription = RecordingSubscriptionService()
 }

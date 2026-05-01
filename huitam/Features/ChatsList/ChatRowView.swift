@@ -36,9 +36,41 @@ struct ChatRowView: View {
                             .background(tintColor, in: Circle())
                     }
                 }
+
+                HStack(spacing: 6) {
+                    Image(systemName: roleIconName)
+                        .font(.caption2.weight(.semibold))
+
+                    Text(roleSummary)
+                        .font(.caption2)
+                        .lineLimit(1)
+                }
+                .foregroundStyle(.secondary)
             }
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())
+    }
+
+    private var roleIconName: String {
+        switch (chat.currentUserRole.isLearner, chat.participantRole.isLearner) {
+        case (true, true): "arrow.left.arrow.right.circle"
+        case (true, false): "graduationcap"
+        case (false, true): "bubble.left.and.bubble.right"
+        case (false, false): "message"
+        }
+    }
+
+    private var roleSummary: String {
+        switch (chat.currentUserRole.learningLanguage, chat.participantRole.learningLanguage) {
+        case let (.some(myLanguage), .some(theirLanguage)):
+            "You: \(myLanguage.shortCode) · Them: \(theirLanguage.shortCode)"
+        case let (.some(myLanguage), .none):
+            "You practice \(myLanguage.shortCode)"
+        case let (.none, .some(theirLanguage)):
+            "They practice \(theirLanguage.shortCode)"
+        case (.none, .none):
+            "Just chatting"
+        }
     }
 }
