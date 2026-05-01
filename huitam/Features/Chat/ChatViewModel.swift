@@ -10,6 +10,7 @@ final class ChatViewModel {
     private let studyCardService: StudyCardServicing
     private let aiAssistService: AIAssistServicing
     private let settingsService: SettingsServicing
+    private let subscriptionService: SubscriptionServicing
 
     private(set) var messages: [ChatMessage] = []
     private(set) var isLoading = false
@@ -17,22 +18,32 @@ final class ChatViewModel {
     private(set) var errorMessage: String?
     private(set) var visibleOriginalMessageIDs: Set<UUID> = []
     private(set) var hiddenCorrectionMessageIDs: Set<UUID> = []
+    private(set) var settings = AppDefaults.settings
+    private(set) var subscriptionEntitlement: SubscriptionEntitlement = .trial
     var analysis: MessageAnalysis?
     var draft = ""
-    var canUseStudyFeatures = true
+    private(set) var canUseStudyFeatures = true
+
+    var needsSubscription: Bool {
+        chat.currentUserRole.isLearner &&
+            settings.canUseStudyFeatures &&
+            subscriptionEntitlement.canUseLearnerFeatures == false
+    }
 
     init(
         chat: ChatSummary,
         chatService: ChatServicing,
         studyCardService: StudyCardServicing,
         aiAssistService: AIAssistServicing,
-        settingsService: SettingsServicing
+        settingsService: SettingsServicing,
+        subscriptionService: SubscriptionServicing
     ) {
         self.chat = chat
         self.chatService = chatService
         self.studyCardService = studyCardService
         self.aiAssistService = aiAssistService
         self.settingsService = settingsService
+        self.subscriptionService = subscriptionService
     }
 
     func load() async {
@@ -40,11 +51,14 @@ final class ChatViewModel {
         errorMessage = nil
         async let loadedMessages = chatService.loadMessages(chatID: chat.id)
         async let loadedSettings = settingsService.loadSettings()
+        async let loadedEntitlement = subscriptionService.loadEntitlement()
 
         do {
-            let (messages, settings) = try await (loadedMessages, loadedSettings)
+            let (messages, settings, entitlement) = try await (loadedMessages, loadedSettings, loadedEntitlement)
             self.messages = messages
-            canUseStudyFeatures = settings.canUseStudyFeatures
+            self.settings = settings
+            subscriptionEntitlement = entitlement
+            refreshStudyFeatureAccess()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -54,7 +68,19 @@ final class ChatViewModel {
     func loadSettings() async {
         do {
             let settings = try await settingsService.loadSettings()
-            canUseStudyFeatures = settings.canUseStudyFeatures
+            self.settings = settings
+            refreshStudyFeatureAccess()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func startLearnerTrial() async {
+        guard chat.currentUserRole.isLearner else { return }
+
+        do {
+            subscriptionEntitlement = try await subscriptionService.startTrial()
+            refreshStudyFeatureAccess()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -147,5 +173,11 @@ final class ChatViewModel {
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    private func refreshStudyFeatureAccess() {
+        canUseStudyFeatures = chat.currentUserRole.isLearner &&
+            settings.canUseStudyFeatures &&
+            subscriptionEntitlement.canUseLearnerFeatures
     }
 }

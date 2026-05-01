@@ -9,6 +9,8 @@ final class AppDependencyContainer {
     let translationService: TranslationServicing
     let aiAssistService: AIAssistServicing
     let settingsService: SettingsServicing
+    let onboardingService: OnboardingServicing
+    let subscriptionService: SubscriptionServicing
 
     init(
         chatService: ChatServicing,
@@ -17,7 +19,9 @@ final class AppDependencyContainer {
         friendService: FriendServicing,
         translationService: TranslationServicing,
         aiAssistService: AIAssistServicing,
-        settingsService: SettingsServicing
+        settingsService: SettingsServicing,
+        onboardingService: OnboardingServicing,
+        subscriptionService: SubscriptionServicing
     ) {
         self.chatService = chatService
         self.profileService = profileService
@@ -26,6 +30,8 @@ final class AppDependencyContainer {
         self.translationService = translationService
         self.aiAssistService = aiAssistService
         self.settingsService = settingsService
+        self.onboardingService = onboardingService
+        self.subscriptionService = subscriptionService
     }
 
     static func mock() -> AppDependencyContainer {
@@ -36,7 +42,36 @@ final class AppDependencyContainer {
             friendService: MockFriendService(),
             translationService: MockTranslationService(),
             aiAssistService: MockAIAssistService(),
-            settingsService: MockSettingsService()
+            settingsService: MockSettingsService(),
+            onboardingService: MockOnboardingService(),
+            subscriptionService: MockSubscriptionService()
+        )
+    }
+
+    static func production() -> AppDependencyContainer {
+        FirebaseBootstrap.configureIfNeeded()
+
+        let authSession = FirebaseAuthSession()
+        let settingsService = FirebaseSettingsService(authSession: authSession)
+        let translationService = FirebaseTranslationService()
+        let chatService = FirebaseChatService(
+            authSession: authSession,
+            translationService: translationService
+        )
+
+        return AppDependencyContainer(
+            chatService: chatService,
+            profileService: FirebaseProfileService(authSession: authSession),
+            studyCardService: FirebaseStudyCardService(authSession: authSession),
+            friendService: FirebaseFriendService(authSession: authSession),
+            translationService: translationService,
+            aiAssistService: FirebaseAIAssistService(),
+            settingsService: settingsService,
+            onboardingService: FirebaseOnboardingService(
+                authSession: authSession,
+                settingsService: settingsService
+            ),
+            subscriptionService: FirebaseSubscriptionService(authSession: authSession)
         )
     }
 }

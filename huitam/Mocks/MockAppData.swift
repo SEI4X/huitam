@@ -60,7 +60,9 @@ enum MockAppData {
             timestamp: Date(timeIntervalSince1970: 1_775_000_000),
             unreadCount: 2,
             nativeLanguage: .russian,
-            practiceLanguage: .english
+            practiceLanguage: .english,
+            currentUserRole: .learner(.english),
+            participantRole: .companion
         ),
         ChatSummary(
             id: mateoChatID,
@@ -69,7 +71,9 @@ enum MockAppData {
             timestamp: Date(timeIntervalSince1970: 1_774_996_400),
             unreadCount: 0,
             nativeLanguage: .russian,
-            practiceLanguage: .english
+            practiceLanguage: .english,
+            currentUserRole: .learner(.english),
+            participantRole: .learner(.french)
         )
     ]
 
@@ -164,6 +168,15 @@ enum MockAppData {
         theme: .system,
         tint: .blue,
         notificationsEnabled: true
+    )
+
+    static let sampleInvite = PracticeInvite(
+        id: "mock-invite",
+        inviterDisplayName: "Alex",
+        inviterNativeLanguage: .russian,
+        inviterLearningLanguage: .english,
+        guestNativeLanguage: .french,
+        guestLearningLanguage: .none
     )
 
     static let friendResults = [

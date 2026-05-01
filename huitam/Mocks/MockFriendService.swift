@@ -22,4 +22,40 @@ final class MockFriendService: FriendServicing {
     func scanQRCodeMockResult() async throws -> FriendSearchResult? {
         results.first
     }
+
+    func loadInvite(id: String) async throws -> PracticeInvite {
+        MockAppData.sampleInvite
+    }
+
+    func createPracticeInvite(_ request: PracticeInviteRequest) async throws -> PracticeInvite {
+        PracticeInvite(
+            id: "mock-invite",
+            inviterDisplayName: "Alex",
+            inviterNativeLanguage: MockAppData.profile.nativeLanguage,
+            inviterLearningLanguage: MockAppData.profile.learningLanguage.language ?? .english,
+            guestNativeLanguage: request.guestNativeLanguage,
+            guestLearningLanguage: request.guestLearningLanguage
+        )
+    }
+
+    func acceptInvite(_ invite: PracticeInvite, as role: ChatParticipantRole) async throws -> ChatSummary {
+        ChatSummary(
+            id: UUID(),
+            participant: ChatParticipant(
+                id: MockAppData.currentUserID,
+                nickname: "alex",
+                displayName: invite.inviterDisplayName,
+                avatarSystemImage: "person.crop.circle.fill",
+                nativeLanguage: invite.inviterNativeLanguage,
+                learningLanguage: .language(invite.inviterLearningLanguage)
+            ),
+            lastMessagePreview: "You joined \(invite.inviterDisplayName)'s practice chat.",
+            timestamp: Date(),
+            unreadCount: 0,
+            nativeLanguage: invite.guestNativeLanguage,
+            practiceLanguage: role.learningLanguage,
+            currentUserRole: role,
+            participantRole: .learner(invite.inviterLearningLanguage)
+        )
+    }
 }

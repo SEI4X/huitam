@@ -11,7 +11,8 @@ struct ChatView: View {
             chatService: container.chatService,
             studyCardService: container.studyCardService,
             aiAssistService: container.aiAssistService,
-            settingsService: container.settingsService
+            settingsService: container.settingsService,
+            subscriptionService: container.subscriptionService
         ))
     }
 
@@ -19,6 +20,16 @@ struct ChatView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 6) {
+                    if viewModel.needsSubscription {
+                        LearnerSubscriptionBanner {
+                            Task {
+                                await viewModel.startLearnerTrial()
+                            }
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                    }
+
                     ForEach(viewModel.messages) { message in
                         MessageBubbleView(
                             message: message,
@@ -126,5 +137,36 @@ struct ChatView: View {
             insertion: .move(edge: edge).combined(with: .scale(scale: 0.94, anchor: message.direction == .outgoing ? .trailing : .leading)).combined(with: .opacity),
             removal: .opacity.combined(with: .scale(scale: 0.98))
         )
+    }
+}
+
+private struct LearnerSubscriptionBanner: View {
+    @Environment(\.appTintColor) private var tintColor
+
+    let onStartTrial: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "sparkles")
+                    .foregroundStyle(tintColor)
+                Text("Learner mode")
+                    .font(.headline)
+                Spacer()
+            }
+
+            Text("AI hints, corrections, message analysis, and saved cards are available for learners.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+
+            Button(action: onStartTrial) {
+                Label("Start Trial", systemImage: "checkmark.circle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(14)
+        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
