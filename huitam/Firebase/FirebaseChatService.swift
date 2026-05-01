@@ -67,23 +67,50 @@ final class FirebaseChatService: ChatServicing {
         let chatData = chatSnapshot.data() ?? [:]
         let participantUIDs = chatData["participantUIDs"] as? [String] ?? []
         let recipientUID = participantUIDs.first { $0 != uid }
-        let sourceLanguage = FirebaseDocumentMapper.appLanguage(from: chatData["nativeLanguage"], fallback: AppDefaults.settings.nativeLanguage)
-        let targetLanguage = FirebaseDocumentMapper.appLanguage(from: chatData["practiceLanguage"], fallback: sourceLanguage)
+        let roles = chatData["roles"] as? [String: [String: Any]] ?? [:]
+        let currentRole = role(for: uid, in: roles)
+        let recipientRole = recipientUID.map { role(for: $0, in: roles) } ?? .companion
+        let currentProfile = try await profile(uid: uid)
+        let recipientProfile: UserProfile?
+        if let recipientUID {
+            recipientProfile = try await profile(uid: recipientUID)
+        } else {
+            recipientProfile = nil
+        }
+        let sourceLanguage = messageLanguage(
+            role: currentRole,
+            nativeLanguage: currentProfile.nativeLanguage
+        )
+        let targetLanguage = messageLanguage(
+            role: recipientRole,
+            nativeLanguage: recipientProfile?.nativeLanguage ?? sourceLanguage
+        )
         let translated = try await translationService.translate(draft, from: sourceLanguage, to: targetLanguage)
+        var displayTexts = [uid: draft]
+        if let recipientUID {
+            displayTexts[recipientUID] = translated
+        }
 
         let messageID = UUID()
         let messageData: [String: Any] = [
             "senderUID": uid,
             "originalText": draft,
             "translatedText": translated,
+            "displayTexts": displayTexts,
             "deliveryState": "sent",
             "createdAt": FieldValue.serverTimestamp()
         ]
+
+        var lastMessagePreviews = [uid: draft]
+        if let recipientUID {
+            lastMessagePreviews[recipientUID] = translated
+        }
 
         try await FirebaseAsync.setData(messageData, on: messagesCollection(chatID: chatID).document(messageID.uuidString), merge: false)
         try await FirebaseAsync.setData(
             [
                 "lastMessagePreview": translated,
+                "lastMessagePreviews": lastMessagePreviews,
                 "updatedAt": FieldValue.serverTimestamp(),
                 "lastSenderUID": uid
             ],
@@ -106,7 +133,7 @@ final class FirebaseChatService: ChatServicing {
             chatID: chatID,
             senderID: StableID.uuid(from: uid),
             timestamp: Date(),
-            translatedText: translated,
+            translatedText: draft,
             originalText: draft,
             direction: .outgoing,
             deliveryState: .sent
@@ -153,5 +180,21 @@ final class FirebaseChatService: ChatServicing {
 
     private func messagesCollection(chatID: UUID) -> CollectionReference {
         db.collection("chats").document(chatID.uuidString).collection("messages")
+    }
+
+    private func role(for uid: String, in roles: [String: [String: Any]]) -> ChatParticipantRole {
+        (try? FirebaseDocumentMapper.role(from: roles[uid] ?? ["kind": "companion"])) ?? .companion
+    }
+
+    private func profile(uid: String) async throws -> UserProfile {
+        let snapshot = try await FirebaseAsync.getDocument(db.collection("users").document(uid))
+        return FirebaseDocumentMapper.profile(uid: uid, from: snapshot.data() ?? [:])
+    }
+
+    private func messageLanguage(
+        role: ChatParticipantRole,
+        nativeLanguage: AppLanguage
+    ) -> AppLanguage {
+        role.learningLanguage ?? nativeLanguage
     }
 }

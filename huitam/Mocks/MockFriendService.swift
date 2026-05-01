@@ -19,10 +19,6 @@ final class MockFriendService: FriendServicing {
         "huitam://add/alex"
     }
 
-    func scanQRCodeMockResult() async throws -> FriendSearchResult? {
-        results.first
-    }
-
     func loadInvite(id: String) async throws -> PracticeInvite {
         MockAppData.sampleInvite
     }

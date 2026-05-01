@@ -11,6 +11,7 @@ final class AddFriendViewModel {
     private(set) var hasSearched = false
     private(set) var sharePayload: String?
     private(set) var scannedFriend: FriendSearchResult?
+    private(set) var scannedInvite: PracticeInvite?
     private(set) var errorMessage: String?
 
     init(friendService: FriendServicing) {
@@ -41,11 +42,23 @@ final class AddFriendViewModel {
         }
     }
 
-    func scanQRCode() async {
+    func openScannedInvitePayload(_ payload: String) async {
+        let trimmedPayload = payload.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard
+            let url = URL(string: trimmedPayload),
+            let inviteID = InviteDeepLinkParser.inviteID(from: url)
+        else {
+            scannedInvite = nil
+            errorMessage = "This QR code is not a huitam invite."
+            return
+        }
+
         do {
-            scannedFriend = try await friendService.scanQRCodeMockResult()
+            scannedInvite = try await friendService.loadInvite(id: inviteID)
+            scannedFriend = nil
+            errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = AppErrorMessage.userFacing(error)
         }
     }
 }

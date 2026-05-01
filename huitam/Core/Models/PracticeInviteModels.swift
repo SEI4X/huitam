@@ -21,6 +21,6 @@ struct PracticeInvite: Identifiable, Hashable {
     }
 
     var shareURL: URL {
-        URL(string: "https://huitam.app/invite/\(id)")!
+        URL(string: "https://huitam.com/invite/\(id)")!
     }
 }

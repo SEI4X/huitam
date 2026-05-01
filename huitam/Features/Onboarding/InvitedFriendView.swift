@@ -4,10 +4,13 @@ struct InvitedFriendView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: InvitedFriendViewModel
 
-    init(invite: PracticeInvite, friendService: FriendServicing) {
+    private let container: AppDependencyContainer
+
+    init(invite: PracticeInvite, container: AppDependencyContainer) {
+        self.container = container
         _viewModel = State(initialValue: InvitedFriendViewModel(
             invite: invite,
-            friendService: friendService
+            friendService: container.friendService
         ))
     }
 
@@ -46,6 +49,12 @@ struct InvitedFriendView: View {
                 Section("Ready") {
                     LabeledContent("Chat", value: createdChat.participant.displayName)
                     LabeledContent("Mode", value: createdChat.currentUserRole.displayName)
+
+                    NavigationLink {
+                        ChatView(chat: createdChat, container: container)
+                    } label: {
+                        Label("Open Chat", systemImage: "message")
+                    }
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
@@ -69,7 +78,7 @@ struct InvitedFriendView: View {
     NavigationStack {
         InvitedFriendView(
             invite: MockAppData.sampleInvite,
-            friendService: MockFriendService()
+            container: .mock()
         )
     }
 }

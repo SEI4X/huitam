@@ -45,7 +45,7 @@ struct OnboardingView: View {
                     }
 
                         NavigationLink {
-                            InviteLookupView(friendService: container.friendService)
+                            InviteLookupView(container: container)
                         } label: {
                             Label("I Was Invited", systemImage: "link")
                         }

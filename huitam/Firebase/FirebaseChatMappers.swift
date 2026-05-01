@@ -18,7 +18,7 @@ extension FirebaseDocumentMapper {
         return ChatSummary(
             id: StableID.uuid(from: documentID),
             participant: participant(uid: participantUID, from: participantProfile),
-            lastMessagePreview: data["lastMessagePreview"] as? String ?? "",
+            lastMessagePreview: previewText(from: data, currentUID: currentUID),
             timestamp: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
             unreadCount: ((data["unreadCounts"] as? [String: Int])?[currentUID]) ?? 0,
             nativeLanguage: appLanguage(from: data["nativeLanguage"], fallback: .english),
@@ -37,7 +37,7 @@ extension FirebaseDocumentMapper {
             chatID: chatID,
             senderID: StableID.uuid(from: senderUID),
             timestamp: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
-            translatedText: data["translatedText"] as? String ?? data["originalText"] as? String ?? "",
+            translatedText: displayText(from: data, currentUID: currentUID),
             originalText: data["originalText"] as? String ?? "",
             direction: senderUID == currentUID ? .outgoing : .incoming,
             deliveryState: MessageDeliveryState(rawValue: data["deliveryState"] as? String ?? "") ?? .sent,
@@ -82,6 +82,24 @@ extension FirebaseDocumentMapper {
             mistakeText: mistakeText,
             explanation: explanation
         )
+    }
+
+    static func displayText(from data: [String: Any], currentUID: String) -> String {
+        if let displayTexts = data["displayTexts"] as? [String: String],
+           let displayText = displayTexts[currentUID] {
+            return displayText
+        }
+
+        return data["translatedText"] as? String ?? data["originalText"] as? String ?? ""
+    }
+
+    static func previewText(from data: [String: Any], currentUID: String) -> String {
+        if let previews = data["lastMessagePreviews"] as? [String: String],
+           let preview = previews[currentUID] {
+            return preview
+        }
+
+        return data["lastMessagePreview"] as? String ?? ""
     }
 }
 

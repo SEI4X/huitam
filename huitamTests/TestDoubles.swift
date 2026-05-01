@@ -130,6 +130,7 @@ final class RecordingSettingsService: SettingsServicing {
 @MainActor
 final class RecordingFriendService: FriendServicing {
     var queries: [String] = []
+    var loadedInviteIDs: [String] = []
     var createdInviteRequests: [PracticeInviteRequest] = []
     var acceptedInvites: [PracticeInvite] = []
 
@@ -142,12 +143,9 @@ final class RecordingFriendService: FriendServicing {
         "huitam://add/alex"
     }
 
-    func scanQRCodeMockResult() async throws -> FriendSearchResult? {
-        MockAppData.friendResults.first
-    }
-
     func loadInvite(id: String) async throws -> PracticeInvite {
-        MockAppData.sampleInvite
+        loadedInviteIDs.append(id)
+        return MockAppData.sampleInvite
     }
 
     func createPracticeInvite(_ request: PracticeInviteRequest) async throws -> PracticeInvite {

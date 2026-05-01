@@ -4,11 +4,11 @@ struct CreatePracticeChatView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var viewModel: CreatePracticeChatViewModel
 
-    private let friendService: FriendServicing
+    private let container: AppDependencyContainer
 
-    init(friendService: FriendServicing) {
-        self.friendService = friendService
-        _viewModel = State(initialValue: CreatePracticeChatViewModel(friendService: friendService))
+    init(container: AppDependencyContainer) {
+        self.container = container
+        _viewModel = State(initialValue: CreatePracticeChatViewModel(friendService: container.friendService))
     }
 
     var body: some View {
@@ -53,6 +53,12 @@ struct CreatePracticeChatView: View {
 
                 if let invite = viewModel.invite {
                     Section("Invite") {
+                        HStack {
+                            Spacer()
+                            InviteQRCodeView(url: invite.shareURL)
+                            Spacer()
+                        }
+
                         Text(invite.shareURL.absoluteString)
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -63,7 +69,7 @@ struct CreatePracticeChatView: View {
                         }
 
                         NavigationLink {
-                            InvitedFriendView(invite: invite, friendService: friendService)
+                            InvitedFriendView(invite: invite, container: container)
                         } label: {
                             Label("Preview Invitation", systemImage: "person.crop.circle.badge.checkmark")
                         }

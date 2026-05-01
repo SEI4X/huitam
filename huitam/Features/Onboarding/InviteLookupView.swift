@@ -5,8 +5,14 @@ struct InviteLookupView: View {
     @State private var invite: PracticeInvite?
     @State private var isLoading = false
     @State private var errorMessage: String?
+    @State private var didAutoLoad = false
 
-    let friendService: FriendServicing
+    let container: AppDependencyContainer
+
+    init(container: AppDependencyContainer, initialInviteID: String = "") {
+        self.container = container
+        _inviteID = State(initialValue: initialInviteID)
+    }
 
     var body: some View {
         Form {
@@ -26,7 +32,7 @@ struct InviteLookupView: View {
             if let invite {
                 Section("Ready") {
                     NavigationLink {
-                        InvitedFriendView(invite: invite, friendService: friendService)
+                        InvitedFriendView(invite: invite, container: container)
                     } label: {
                         Label("Continue", systemImage: "person.crop.circle.badge.checkmark")
                     }
@@ -43,6 +49,14 @@ struct InviteLookupView: View {
         }
         .navigationTitle("Invitation")
         .navigationBarTitleDisplayMode(.inline)
+        .task {
+            guard didAutoLoad == false else { return }
+            didAutoLoad = true
+
+            if inviteID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false {
+                await loadInvite()
+            }
+        }
     }
 
     private func loadInvite() async {
@@ -51,7 +65,7 @@ struct InviteLookupView: View {
         defer { isLoading = false }
 
         do {
-            invite = try await friendService.loadInvite(id: inviteID)
+            invite = try await container.friendService.loadInvite(id: inviteID)
         } catch {
             errorMessage = AppErrorMessage.userFacing(error)
         }

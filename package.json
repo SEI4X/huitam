@@ -1,0 +1,9 @@
+{
+  "private": true,
+  "scripts": {
+    "functions:install": "npx -y -p node@22 -p npm@10 npm --prefix firebase/functions install",
+    "functions:build": "npx -y -p node@22 -p npm@10 npm --prefix firebase/functions run build",
+    "functions:audit": "npx -y -p node@22 -p npm@10 npm --prefix firebase/functions audit",
+    "functions:audit:prod": "npx -y -p node@22 -p npm@10 npm --prefix firebase/functions audit --audit-level=high"
+  }
+}

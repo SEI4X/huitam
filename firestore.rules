@@ -35,9 +35,10 @@ service cloud.firestore {
 
       match /deviceTokens/{token} {
         allow read: if false;
-        allow write: if isOwner(uid)
+        allow create, update: if isOwner(uid)
           && request.resource.data.token == token
           && request.resource.data.platform == 'ios';
+        allow delete: if isOwner(uid);
       }
 
       match /studyCards/{cardId} {
@@ -76,11 +77,15 @@ service cloud.firestore {
         && request.resource.data.inviterUID == request.auth.uid
         && request.resource.data.status == 'open';
       allow update: if signedIn()
-        && (
-          resource.data.inviterUID == request.auth.uid ||
-          request.resource.data.guestUID == request.auth.uid
-        )
-        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['inviterUID']);
+        && resource.data.status == 'open'
+        && request.resource.data.guestUID == request.auth.uid
+        && request.resource.data.status == 'accepted'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'status',
+          'guestUID',
+          'chatID',
+          'acceptedAt'
+        ]);
     }
   }
 }

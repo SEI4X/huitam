@@ -59,6 +59,15 @@ final class SettingsViewModel {
     func updateNotifications(enabled: Bool) async {
         var updated = settings
         updated.notificationsEnabled = await NotificationPermissionCenter.updateRegistration(enabled: enabled)
+        do {
+            if updated.notificationsEnabled {
+                try await FirebaseNotificationTokenService().storeCurrentMessagingTokenIfAvailable()
+            } else {
+                try await FirebaseNotificationTokenService().removeCurrentMessagingTokenIfAvailable()
+            }
+        } catch {
+            errorMessage = AppErrorMessage.userFacing(error)
+        }
         await persist(updated)
     }
 

@@ -19,7 +19,7 @@ final class PracticeInviteViewModelTests: XCTestCase {
             )
         ])
         XCTAssertEqual(viewModel.invite?.guestRole, .companion)
-        XCTAssertEqual(viewModel.invite?.shareURL.absoluteString, "https://huitam.app/invite/mock-invite")
+        XCTAssertEqual(viewModel.invite?.shareURL.absoluteString, "https://huitam.com/invite/mock-invite")
     }
 
     func testAcceptingInviteAsMutualLearnerCreatesChatWithLearnerRoles() async throws {

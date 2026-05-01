@@ -24,4 +24,26 @@ final class AddFriendViewModelTests: XCTestCase {
         XCTAssertEqual(viewModel.results.map(\.nickname), ["camille"])
         XCTAssertEqual(service.queries, ["cam"])
     }
+
+    func testScannedInviteURLLoadsInvite() async {
+        let service = RecordingFriendService()
+        let viewModel = AddFriendViewModel(friendService: service)
+
+        await viewModel.openScannedInvitePayload("https://huitam.com/invite/abc-123")
+
+        XCTAssertEqual(service.loadedInviteIDs, ["abc-123"])
+        XCTAssertEqual(viewModel.scannedInvite?.id, MockAppData.sampleInvite.id)
+        XCTAssertNil(viewModel.scannedFriend)
+    }
+
+    func testInvalidScannedInviteURLShowsError() async {
+        let service = RecordingFriendService()
+        let viewModel = AddFriendViewModel(friendService: service)
+
+        await viewModel.openScannedInvitePayload("not an invite")
+
+        XCTAssertTrue(service.loadedInviteIDs.isEmpty)
+        XCTAssertNil(viewModel.scannedInvite)
+        XCTAssertNotNil(viewModel.errorMessage)
+    }
 }

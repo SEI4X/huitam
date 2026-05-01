@@ -43,13 +43,9 @@ final class FirebaseFriendService: FriendServicing {
         return "huitam://user/\(uid)"
     }
 
-    func scanQRCodeMockResult() async throws -> FriendSearchResult? {
-        nil
-    }
-
     func loadInvite(id: String) async throws -> PracticeInvite {
         let inviteID = id
-            .replacingOccurrences(of: "https://huitam.app/invite/", with: "")
+            .replacingOccurrences(of: "https://huitam.com/invite/", with: "")
             .replacingOccurrences(of: "huitam://invite/", with: "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let snapshot = try await FirebaseAsync.getDocument(db.collection("invites").document(inviteID))
