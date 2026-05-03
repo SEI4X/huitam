@@ -4,24 +4,15 @@ import Foundation
 @MainActor
 final class FirebaseAuthSession {
     func currentUserID() async throws -> String {
-        if let uid = Auth.auth().currentUser?.uid {
+        if let user = Auth.auth().currentUser, user.isAnonymous == false {
+            let uid = user.uid
             return uid
         }
 
-        return try await withCheckedThrowingContinuation { continuation in
-            Auth.auth().signInAnonymously { result, error in
-                if let error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-
-                guard let uid = result?.user.uid else {
-                    continuation.resume(throwing: FirebaseMappingError.missingField("uid"))
-                    return
-                }
-
-                continuation.resume(returning: uid)
-            }
+        if Auth.auth().currentUser?.isAnonymous == true {
+            try? Auth.auth().signOut()
         }
+
+        throw AuthSessionError.unauthenticated
     }
 }

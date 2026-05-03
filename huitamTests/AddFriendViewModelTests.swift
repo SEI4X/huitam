@@ -25,15 +25,28 @@ final class AddFriendViewModelTests: XCTestCase {
         XCTAssertEqual(service.queries, ["cam"])
     }
 
-    func testScannedInviteURLLoadsInvite() async {
+    func testScannedInviteURLAcceptsInviteAndOpensChat() async {
         let service = RecordingFriendService()
         let viewModel = AddFriendViewModel(friendService: service)
 
-        await viewModel.openScannedInvitePayload("https://huitam.com/invite/abc-123")
+        await viewModel.acceptInvitePayload("https://huitam.com/invite/abc-123", as: .learner(.english))
 
         XCTAssertEqual(service.loadedInviteIDs, ["abc-123"])
-        XCTAssertEqual(viewModel.scannedInvite?.id, MockAppData.sampleInvite.id)
+        XCTAssertEqual(service.acceptedInvites.map(\.id), [MockAppData.sampleInvite.id])
+        XCTAssertEqual(viewModel.openedChat?.participant.displayName, "Camille")
+        XCTAssertNil(viewModel.scannedInvite)
         XCTAssertNil(viewModel.scannedFriend)
+    }
+
+    func testScannedAccountURLOpensExistingOrCreatedChat() async {
+        let service = RecordingFriendService()
+        let viewModel = AddFriendViewModel(friendService: service)
+
+        await viewModel.acceptInvitePayload("https://huitam.com/user/camille", as: .learner(.english))
+
+        XCTAssertEqual(service.openedAccountNicknames, ["camille"])
+        XCTAssertEqual(viewModel.openedChat?.participant.displayName, "Camille")
+        XCTAssertNil(viewModel.scannedInvite)
     }
 
     func testInvalidScannedInviteURLShowsError() async {

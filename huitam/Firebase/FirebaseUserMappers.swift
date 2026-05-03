@@ -60,6 +60,7 @@ extension FirebaseDocumentMapper {
     static func participant(uid: String, from data: [String: Any]) -> ChatParticipant {
         ChatParticipant(
             id: StableID.uuid(from: uid),
+            uid: uid,
             nickname: data["nickname"] as? String ?? "friend",
             displayName: data["displayName"] as? String ?? "Friend",
             avatarSystemImage: data["avatarSystemImage"] as? String ?? "person.crop.circle.fill",

@@ -1,36 +1,94 @@
 import Foundation
+import AuthenticationServices
 @testable import huitam
 
 @MainActor
 final class RecordingChatService: ChatServicing {
     var loadedChatIDs: [UUID] = []
     var sentDrafts: [String] = []
+    var sentMessageIDs: [UUID] = []
+    var sentReplies: [MessageReplyPreview?] = []
+    var recentMessageLoadLimits: [Int] = []
+    var earlierMessageLoadRequests: [(before: UUID, limit: Int)] = []
+    var messageUpdateAfterDates: [Date?] = []
+    var markedReadChatIDs: [UUID] = []
+    var deletedMessageIDs: [UUID] = []
     var chats = MockAppData.chats
+    var chatUpdates: [[ChatSummary]] = []
     var messagesByChatID = MockAppData.messagesByChatID
+    var sendDelayNanoseconds: UInt64 = 0
+    var sendError: Error?
 
     func loadChatSummaries() async throws -> [ChatSummary] {
         chats
     }
 
-    func loadMessages(chatID: UUID) async throws -> [ChatMessage] {
-        loadedChatIDs.append(chatID)
-        return messagesByChatID[chatID] ?? []
+    func chatSummaryUpdates() -> AsyncStream<Result<[ChatSummary], Error>> {
+        AsyncStream { continuation in
+            let updates = chatUpdates.isEmpty ? [chats] : chatUpdates
+            for update in updates {
+                continuation.yield(.success(update))
+            }
+            continuation.finish()
+        }
     }
 
-    func sendMessage(chatID: UUID, draft: String) async throws -> ChatMessage {
+    func loadRecentMessages(chat: ChatSummary, limit: Int) async throws -> [ChatMessage] {
+        loadedChatIDs.append(chat.id)
+        recentMessageLoadLimits.append(limit)
+        return Array((messagesByChatID[chat.id] ?? []).sorted { $0.timestamp > $1.timestamp }.prefix(limit))
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    func loadEarlierMessages(chat: ChatSummary, before oldestMessage: ChatMessage, limit: Int) async throws -> [ChatMessage] {
+        earlierMessageLoadRequests.append((before: oldestMessage.id, limit: limit))
+        return Array((messagesByChatID[chat.id] ?? [])
+            .filter { $0.timestamp < oldestMessage.timestamp }
+            .sorted { $0.timestamp > $1.timestamp }
+            .prefix(limit))
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    func messageUpdates(chat: ChatSummary, after date: Date?) -> AsyncStream<Result<[ChatMessage], Error>> {
+        messageUpdateAfterDates.append(date)
+        return AsyncStream { continuation in
+            continuation.yield(.success([]))
+            continuation.finish()
+        }
+    }
+
+    func sendMessage(chat: ChatSummary, draft: String, localID: UUID, reply: MessageReplyPreview?) async throws -> ChatMessage {
+        if sendDelayNanoseconds > 0 {
+            try await Task.sleep(nanoseconds: sendDelayNanoseconds)
+        }
+        if let sendError {
+            throw sendError
+        }
         sentDrafts.append(draft)
+        sentMessageIDs.append(localID)
+        sentReplies.append(reply)
         let message = ChatMessage(
-            id: UUID(),
-            chatID: chatID,
+            id: localID,
+            chatID: chat.id,
             senderID: MockAppData.currentUserID,
             timestamp: Date(),
             translatedText: draft,
             originalText: "[friend language] \(draft)",
             direction: .outgoing,
-            deliveryState: .sent
+            deliveryState: .sent,
+            reply: reply
         )
-        messagesByChatID[chatID, default: []].append(message)
+        messagesByChatID[chat.id, default: []].append(message)
         return message
+    }
+
+    func markChatRead(chat: ChatSummary) async throws {
+        markedReadChatIDs.append(chat.id)
+    }
+
+    func deleteMessage(chat: ChatSummary, message: ChatMessage) async throws {
+        deletedMessageIDs.append(message.id)
+        messagesByChatID[chat.id, default: []].removeAll { $0.id == message.id }
     }
 
     func analyze(message: ChatMessage) async throws -> MessageAnalysis {
@@ -55,6 +113,42 @@ final class RecordingOnboardingService: OnboardingServicing {
             nativeLanguage: nativeLanguage
         )
         return state
+    }
+}
+
+@MainActor
+final class RecordingNotificationPermissionService: NotificationPermissionServicing {
+    var registrationResult = false
+    var registrationRequests: [Bool] = []
+
+    func updateRegistration(enabled: Bool) async -> Bool {
+        registrationRequests.append(enabled)
+        return registrationResult
+    }
+}
+
+final class RecordingPresenceService: PresenceServicing {
+    var observedUserIDs: [String] = []
+    var statusesByUserID: [String: PresenceStatus] = [
+        "firebase-camille": PresenceStatus(isOnline: true, lastSeenAt: Date()),
+        "firebase-mateo": PresenceStatus(isOnline: false, lastSeenAt: Date())
+    ]
+    private(set) var isTrackingCurrentUser = false
+
+    func startTrackingCurrentUser() async {
+        isTrackingCurrentUser = true
+    }
+
+    func stopTrackingCurrentUser() {
+        isTrackingCurrentUser = false
+    }
+
+    func presenceUpdates(for userID: String) -> AsyncStream<PresenceStatus> {
+        observedUserIDs.append(userID)
+        return AsyncStream { continuation in
+            continuation.yield(statusesByUserID[userID] ?? .offline)
+            continuation.finish()
+        }
     }
 }
 
@@ -128,19 +222,78 @@ final class RecordingSettingsService: SettingsServicing {
 }
 
 @MainActor
+final class RecordingAuthService: AuthServicing {
+    var state: AuthSessionState
+    var signOutCount = 0
+    var deletedAccountReasons: [String] = []
+    var googleSignInTokens: [(idToken: String, accessToken: String)] = []
+    var authStateUpdates: AsyncStream<AuthSessionState> {
+        AsyncStream { continuation in
+            continuation.yield(state)
+            continuation.finish()
+        }
+    }
+
+    init(initialState: AuthSessionState = AuthSessionState(userID: "user-1")) {
+        self.state = initialState
+    }
+
+    func loadSession() async -> AuthSessionState {
+        state
+    }
+
+    func signInWithApple(credential: ASAuthorizationAppleIDCredential, nonce: String) async throws -> AuthSessionState {
+        state = AuthSessionState(userID: "apple-user")
+        return state
+    }
+
+    func signInWithGoogle(idToken: String, accessToken: String) async throws -> AuthSessionState {
+        googleSignInTokens.append((idToken, accessToken))
+        state = AuthSessionState(userID: "google-user")
+        return state
+    }
+
+    func signOut() async throws {
+        signOutCount += 1
+        state = .signedOut
+    }
+
+    func deleteAccount(reason: String) async throws {
+        deletedAccountReasons.append(reason)
+        state = .signedOut
+    }
+}
+
+@MainActor
+final class RecordingProfileService: ProfileServicing {
+    var profile = MockAppData.profile
+    var updatedProfiles: [UserProfile] = []
+    var cachedProfile: UserProfile? {
+        profile
+    }
+
+    func loadProfile() async throws -> UserProfile {
+        profile
+    }
+
+    func updateProfile(_ profile: UserProfile) async throws -> UserProfile {
+        updatedProfiles.append(profile)
+        self.profile = profile
+        return profile
+    }
+}
+
+@MainActor
 final class RecordingFriendService: FriendServicing {
     var queries: [String] = []
     var loadedInviteIDs: [String] = []
     var createdInviteRequests: [PracticeInviteRequest] = []
     var acceptedInvites: [PracticeInvite] = []
+    var openedAccountNicknames: [String] = []
 
     func search(byNickname query: String) async throws -> [FriendSearchResult] {
         queries.append(query)
         return MockAppData.friendResults.filter { $0.nickname.contains(query) }
-    }
-
-    func sharePayload() async throws -> String {
-        "huitam://add/alex"
     }
 
     func loadInvite(id: String) async throws -> PracticeInvite {
@@ -172,6 +325,21 @@ final class RecordingFriendService: FriendServicing {
             practiceLanguage: role.learningLanguage,
             currentUserRole: role,
             participantRole: .learner(invite.inviterLearningLanguage)
+        )
+    }
+
+    func openAccountChat(nickname: String, as role: ChatParticipantRole) async throws -> ChatSummary {
+        openedAccountNicknames.append(nickname)
+        return ChatSummary(
+            id: UUID(),
+            participant: MockAppData.camille,
+            lastMessagePreview: "",
+            timestamp: Date(),
+            unreadCount: 0,
+            nativeLanguage: .russian,
+            practiceLanguage: role.learningLanguage,
+            currentUserRole: role,
+            participantRole: .learner(.english)
         )
     }
 }

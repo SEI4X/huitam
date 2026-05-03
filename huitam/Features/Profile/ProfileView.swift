@@ -2,7 +2,6 @@ import SwiftUI
 
 struct ProfileView: View {
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: ProfileViewModel
     private let container: AppDependencyContainer
 
@@ -19,7 +18,7 @@ struct ProfileView: View {
                         profileHeader(profile)
                             .listRowBackground(Color.clear)
                             .listRowSeparator(.hidden)
-                            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 2, trailing: 16))
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
 
                         ProfileStreakCardView(streakDays: profile.streakDays, goal: 30)
                     }
@@ -35,8 +34,22 @@ struct ProfileView: View {
                     Section {
                         ProfileActivityChartView(points: profile.stats.dailyMessages)
                     }
+                } else {
+                    Section {
+                        profileSkeleton
+                            .listRowBackground(Color.clear)
+                            .listRowSeparator(.hidden)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 10, trailing: 16))
+                    }
+
+                    Section("Practice") {
+                        ForEach(0..<5, id: \.self) { _ in
+                            ProfileSkeletonRow()
+                        }
+                    }
                 }
             }
+            .premiumScrollBackground(glowPosition: .top, intensity: 0.66)
             .navigationTitle("Profile")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -44,42 +57,94 @@ struct ProfileView: View {
                     Button("Close") {
                         dismiss()
                     }
-                    .foregroundStyle(.primary)
-                    .tint(.primary)
+                    .foregroundStyle(.white)
+                    .tint(.white)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     NavigationLink {
                         SettingsView(container: container)
                     } label: {
-                        Label("Settings", systemImage: "gearshape")
-                            .labelStyle(.iconOnly)
-                            .font(.body)
-                            .foregroundStyle(.primary)
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 17, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(PremiumTheme.surface, in: Circle())
+                            .overlay {
+                                Circle()
+                                    .stroke(PremiumTheme.hairline, lineWidth: 1)
+                            }
                     }
-                    .tint(.primary)
+                    .buttonStyle(.plain)
+                    .tint(.white)
                     .accessibilityLabel("Settings")
                 }
             }
             .task {
                 await viewModel.load()
             }
-            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.profile)
         }
     }
 
     private func profileHeader(_ profile: UserProfile) -> some View {
         HStack(spacing: 14) {
             AvatarView(systemImage: profile.avatarSystemImage, size: 68, seed: profile.id)
-                .symbolEffect(.bounce, value: profile.streakDays)
 
             VStack(alignment: .leading, spacing: 5) {
                 Text(profile.displayName)
                     .font(.title2.weight(.semibold))
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 Text("@\(profile.nickname)")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
             }
         }
         .padding(.vertical, 4)
+    }
+
+    private var profileSkeleton: some View {
+        HStack(spacing: 14) {
+            Circle()
+                .fill(PremiumTheme.surfaceStrong)
+                .frame(width: 68, height: 68)
+                .overlay {
+                    Image(systemName: "person.crop.circle")
+                        .font(.system(size: 30, weight: .medium))
+                        .foregroundStyle(PremiumTheme.textSecondary)
+                }
+
+            VStack(alignment: .leading, spacing: 8) {
+                Capsule()
+                    .fill(PremiumTheme.surfaceStrong)
+                    .frame(width: 150, height: 18)
+                Capsule()
+                    .fill(PremiumTheme.surfaceStrong.opacity(0.72))
+                    .frame(width: 96, height: 12)
+            }
+
+            Spacer()
+        }
+        .padding(.vertical, 4)
+        .redacted(reason: .placeholder)
+    }
+}
+
+private struct ProfileSkeletonRow: View {
+    var body: some View {
+        HStack(spacing: 12) {
+            Circle()
+                .fill(PremiumTheme.surfaceStrong)
+                .frame(width: 30, height: 30)
+
+            Capsule()
+                .fill(PremiumTheme.surfaceStrong)
+                .frame(width: 140, height: 14)
+
+            Spacer()
+
+            Capsule()
+                .fill(PremiumTheme.surfaceStrong.opacity(0.72))
+                .frame(width: 64, height: 14)
+        }
+        .redacted(reason: .placeholder)
     }
 }

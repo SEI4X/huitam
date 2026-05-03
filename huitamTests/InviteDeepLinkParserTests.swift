@@ -19,4 +19,16 @@ final class InviteDeepLinkParserTests: XCTestCase {
 
         XCTAssertNil(InviteDeepLinkParser.inviteID(from: url))
     }
+
+    func testParsesUniversalAccountLink() {
+        let url = URL(string: "https://huitam.com/user/alex_2026")!
+
+        XCTAssertEqual(InviteDeepLinkParser.accountNickname(from: url), "alex_2026")
+    }
+
+    func testParsesCustomSchemeAccountLink() {
+        let url = URL(string: "huitam://user/alex_2026")!
+
+        XCTAssertEqual(InviteDeepLinkParser.accountNickname(from: url), "alex_2026")
+    }
 }

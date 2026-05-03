@@ -26,9 +26,11 @@ struct StudyCardsView: View {
                 }
                 .pickerStyle(.segmented)
                 .listRowSeparator(.hidden)
+                .listRowBackground(Color.clear)
 
                 ForEach(viewModel.visibleCards) { card in
                     StudyCardRowView(card: card)
+                        .premiumListRow(cornerRadius: 22)
                         .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
                 .onDelete { offsets in
@@ -46,8 +48,10 @@ struct StudyCardsView: View {
                         Text("Saved words and phrases from chats will appear here.")
                     }
                     .transition(.opacity)
+                    .foregroundStyle(.white)
                 }
             }
+            .premiumScrollBackground(glowPosition: .top, intensity: 0.66)
             .navigationTitle("Cards")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -55,6 +59,7 @@ struct StudyCardsView: View {
                     Button("Close") {
                         dismiss()
                     }
+                    .foregroundStyle(.white)
                 }
             }
             .task {

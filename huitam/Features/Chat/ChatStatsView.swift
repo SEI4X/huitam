@@ -27,6 +27,7 @@ struct ChatStatsView: View {
             Section {
                 ChatStatsHeaderView(chat: chat, totalMessages: messages.count)
             }
+            .listRowBackground(PremiumTheme.surface)
 
             Section("Conversation") {
                 ProfileStatRowView(title: "Total messages", value: "\(messages.count)", systemImage: "message")
@@ -34,12 +35,14 @@ struct ChatStatsView: View {
                 ProfileStatRowView(title: "Outgoing", value: "\(outgoingCount)", systemImage: "arrow.up.right")
                 ProfileStatRowView(title: "Practiced words", value: "\(practicedWords)", systemImage: "textformat")
             }
+            .listRowBackground(PremiumTheme.surface)
 
             Section("Languages") {
                 ProfileStatRowView(title: "You practice", value: chat.practiceLanguage?.displayName ?? "Off", systemImage: "graduationcap")
                 ProfileStatRowView(title: "\(chat.participant.displayName) writes", value: chat.participant.nativeLanguage.displayName, systemImage: "globe")
                 ProfileStatRowView(title: "Your language", value: chat.nativeLanguage.displayName, systemImage: "person")
             }
+            .listRowBackground(PremiumTheme.surface)
 
             Section("Practice Signals") {
                 ProfileStatRowView(title: "Originals available", value: "\(messages.filter { !$0.originalText.isEmpty }.count)", systemImage: "text.bubble")
@@ -47,6 +50,7 @@ struct ChatStatsView: View {
                 ProfileStatRowView(title: "Saved candidates", value: "\(max(practicedWords / 5, 1))", systemImage: "bookmark")
                 ProfileStatRowView(title: "AI corrections", value: "\(correctedMessages.count)", systemImage: "sparkles")
             }
+            .listRowBackground(PremiumTheme.surface)
 
             if correctedMessages.isEmpty == false {
                 Section("Errors") {
@@ -56,8 +60,10 @@ struct ChatStatsView: View {
                         }
                     }
                 }
+                .listRowBackground(PremiumTheme.surface)
             }
         }
+        .premiumScrollBackground(glowPosition: .top, intensity: 0.66)
         .navigationTitle("Chat Stats")
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -73,9 +79,10 @@ private struct ChatStatsHeaderView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(chat.participant.displayName)
                     .font(.headline)
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 Text("@\(chat.participant.nickname)")
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
             }
             Spacer()
             Text("\(totalMessages)")
@@ -95,7 +102,7 @@ private struct ChatErrorRowView: View {
                 Image(systemName: "exclamationmark.bubble")
                     .foregroundStyle(.orange)
                 Text(correction.mistakeText)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
                     .strikethrough()
             }
 
@@ -103,11 +110,12 @@ private struct ChatErrorRowView: View {
                 Image(systemName: "checkmark.bubble")
                     .foregroundStyle(.green)
                 Text(correction.correctedText)
+                    .foregroundStyle(PremiumTheme.textPrimary)
             }
 
             Text(correction.explanation)
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textSecondary)
         }
         .padding(.vertical, 4)
     }

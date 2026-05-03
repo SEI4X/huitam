@@ -63,10 +63,11 @@ struct ProfileActivityChartView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Messages per day")
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 if let activeIndex, points.indices.contains(activeIndex) {
                     Text(shortDateFormatter.string(from: points[activeIndex].date))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(PremiumTheme.textSecondary)
                 }
             }
             Spacer()
@@ -84,7 +85,7 @@ struct ProfileActivityChartView: View {
             ForEach(points) { point in
                 Text(weekdayFormatter.string(from: point.date))
                     .font(.caption2)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textTertiary)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -98,7 +99,7 @@ struct ProfileActivityChartView: View {
                 .position(x: point.x, y: size.height / 2)
 
             Circle()
-                .fill(.background)
+                .fill(Color.black)
                 .frame(width: 17, height: 17)
                 .overlay {
                     Circle()
@@ -110,10 +111,10 @@ struct ProfileActivityChartView: View {
 
             Text("\(pointData.count) messages")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(PremiumTheme.textPrimary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
-                .background(.regularMaterial, in: Capsule())
+                .background(PremiumTheme.surfaceStrong, in: Capsule())
                 .position(x: clampedCalloutX(for: point.x, width: size.width), y: max(point.y - 26, 14))
         }
     }

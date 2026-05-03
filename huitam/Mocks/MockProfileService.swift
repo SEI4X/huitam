@@ -3,6 +3,9 @@ import Foundation
 @MainActor
 final class MockProfileService: ProfileServicing {
     private var profile: UserProfile
+    var cachedProfile: UserProfile? {
+        profile
+    }
 
     init(profile: UserProfile? = nil) {
         self.profile = profile ?? MockAppData.profile

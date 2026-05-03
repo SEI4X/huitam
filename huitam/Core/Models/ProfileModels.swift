@@ -26,6 +26,7 @@ struct UserProfile: Identifiable, Equatable {
 
 struct ChatParticipant: Identifiable, Hashable {
     var id: UUID
+    var uid: String = ""
     var nickname: String
     var displayName: String
     var avatarSystemImage: String

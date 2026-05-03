@@ -5,6 +5,7 @@ import Foundation
 final class FirebaseProfileService: ProfileServicing {
     private let authSession: FirebaseAuthSession
     private let db: Firestore
+    private(set) var cachedProfile: UserProfile?
 
     init(authSession: FirebaseAuthSession, db: Firestore = Firestore.firestore()) {
         self.authSession = authSession
@@ -17,16 +18,20 @@ final class FirebaseProfileService: ProfileServicing {
         let snapshot = try await FirebaseAsync.getDocument(reference)
 
         if let data = snapshot.data() {
-            return FirebaseDocumentMapper.profile(uid: uid, from: data)
+            let profile = FirebaseDocumentMapper.profile(uid: uid, from: data)
+            cachedProfile = profile
+            return profile
         }
 
         let profile = defaultProfile(uid: uid)
         try await FirebaseAsync.setData(FirebaseDocumentMapper.data(from: profile, uid: uid), on: reference)
+        cachedProfile = profile
         return profile
     }
 
     func updateProfile(_ profile: UserProfile) async throws -> UserProfile {
         let uid = try await authSession.currentUserID()
+        let currentProfile = try? await loadProfile()
         let normalizedNickname = profile.nickname.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
         let savedProfile = UserProfile(
             id: profile.id,
@@ -40,15 +45,22 @@ final class FirebaseProfileService: ProfileServicing {
         )
 
         try await FirebaseAsync.setData(
-            FirebaseDocumentMapper.data(from: savedProfile, uid: uid),
-            on: db.collection("users").document(uid)
-        )
-
-        try await FirebaseAsync.setData(
             ["uid": uid, "updatedAt": FieldValue.serverTimestamp()],
             on: db.collection("usernames").document(normalizedNickname)
         )
 
+        try await FirebaseAsync.setData(
+            FirebaseDocumentMapper.data(from: savedProfile, uid: uid),
+            on: db.collection("users").document(uid)
+        )
+
+        if let oldNickname = currentProfile?.nickname.lowercased(),
+           oldNickname != normalizedNickname,
+           oldNickname.hasPrefix("user-") == false {
+            try? await FirebaseAsync.delete(db.collection("usernames").document(oldNickname))
+        }
+
+        cachedProfile = savedProfile
         return savedProfile
     }
 

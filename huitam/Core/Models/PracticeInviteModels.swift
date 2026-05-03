@@ -24,3 +24,11 @@ struct PracticeInvite: Identifiable, Hashable {
         URL(string: "https://huitam.com/invite/\(id)")!
     }
 }
+
+struct AccountShareLink: Equatable {
+    var nickname: String
+
+    var url: URL {
+        URL(string: "https://huitam.com/user/\(nickname)")!
+    }
+}

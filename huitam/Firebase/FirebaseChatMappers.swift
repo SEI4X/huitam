@@ -17,6 +17,7 @@ extension FirebaseDocumentMapper {
 
         return ChatSummary(
             id: StableID.uuid(from: documentID),
+            documentID: documentID,
             participant: participant(uid: participantUID, from: participantProfile),
             lastMessagePreview: previewText(from: data, currentUID: currentUID),
             timestamp: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
@@ -28,20 +29,56 @@ extension FirebaseDocumentMapper {
         )
     }
 
+    static func chatSummary(fromCallable result: Any) throws -> ChatSummary {
+        guard
+            let root = result as? [String: Any],
+            let data = root["chat"] as? [String: Any],
+            let documentID = data["id"] as? String,
+            let participantUID = data["participantUID"] as? String,
+            let participantProfile = data["participant"] as? [String: Any],
+            let currentRoleData = data["currentUserRole"] as? [String: Any],
+            let participantRoleData = data["participantRole"] as? [String: Any]
+        else {
+            throw FirebaseMappingError.missingField("callableChatSummary")
+        }
+
+        let updatedAtMillis = numericValue(data["updatedAtMillis"]) ?? 0
+        let unreadCount = Int(numericValue(data["unreadCount"]) ?? 0)
+        let updatedAt = updatedAtMillis > 0 ? Date(timeIntervalSince1970: updatedAtMillis / 1000) : Date()
+
+        return ChatSummary(
+            id: StableID.uuid(from: documentID),
+            documentID: documentID,
+            participant: participant(uid: participantUID, from: participantProfile),
+            lastMessagePreview: data["lastMessagePreview"] as? String ?? "",
+            timestamp: updatedAt,
+            unreadCount: unreadCount,
+            nativeLanguage: appLanguage(from: data["nativeLanguage"], fallback: .english),
+            practiceLanguage: AppLanguage(rawValue: data["practiceLanguage"] as? String ?? ""),
+            currentUserRole: try role(from: currentRoleData),
+            participantRole: try role(from: participantRoleData)
+        )
+    }
+
     static func message(documentID: String, data: [String: Any], currentUID: String, chatID: UUID) -> ChatMessage {
         let senderUID = data["senderUID"] as? String ?? currentUID
         let correctionData = data["correction"] as? [String: Any]
+        let createdAt = (data["createdAt"] as? Timestamp)?.dateValue() ?? Date()
+        let updatedAt = (data["updatedAt"] as? Timestamp)?.dateValue() ?? createdAt
 
         return ChatMessage(
             id: StableID.uuid(from: documentID),
             chatID: chatID,
             senderID: StableID.uuid(from: senderUID),
-            timestamp: (data["createdAt"] as? Timestamp)?.dateValue() ?? Date(),
+            timestamp: createdAt,
+            updatedAt: updatedAt,
             translatedText: displayText(from: data, currentUID: currentUID),
             originalText: data["originalText"] as? String ?? "",
             direction: senderUID == currentUID ? .outgoing : .incoming,
             deliveryState: MessageDeliveryState(rawValue: data["deliveryState"] as? String ?? "") ?? .sent,
-            correction: correctionData.flatMap(correction(from:))
+            errorMessage: nil,
+            correction: correctionData.flatMap(correction(from:)),
+            reply: replyPreview(from: data)
         )
     }
 
@@ -93,6 +130,23 @@ extension FirebaseDocumentMapper {
         return data["translatedText"] as? String ?? data["originalText"] as? String ?? ""
     }
 
+    static func replyPreview(from data: [String: Any]) -> MessageReplyPreview? {
+        guard
+            let rawID = data["replyToMessageID"] as? String,
+            let messageID = UUID(uuidString: rawID),
+            let text = data["replyPreviewText"] as? String
+        else {
+            return nil
+        }
+
+        return MessageReplyPreview(
+            messageID: messageID,
+            senderName: data["replySenderName"] as? String ?? "Message",
+            text: text,
+            originalText: data["replyOriginalText"] as? String
+        )
+    }
+
     static func previewText(from data: [String: Any], currentUID: String) -> String {
         if let previews = data["lastMessagePreviews"] as? [String: String],
            let preview = previews[currentUID] {
@@ -101,23 +155,39 @@ extension FirebaseDocumentMapper {
 
         return data["lastMessagePreview"] as? String ?? ""
     }
+
+    private static func numericValue(_ value: Any?) -> Double? {
+        switch value {
+        case let value as Double:
+            value
+        case let value as Int:
+            Double(value)
+        case let value as NSNumber:
+            value.doubleValue
+        default:
+            nil
+        }
+    }
 }
 
 private extension MessageDeliveryState {
     init?(rawValue: String) {
         switch rawValue {
+        case "sending": self = .sending
         case "sent": self = .sent
-        case "delivered": self = .delivered
+        case "delivered": self = .sent
         case "read": self = .read
+        case "failed": self = .failed
         default: return nil
         }
     }
 
     var rawValue: String {
         switch self {
+        case .sending: "sending"
         case .sent: "sent"
-        case .delivered: "delivered"
         case .read: "read"
+        case .failed: "failed"
         }
     }
 }

@@ -3,18 +3,15 @@ import XCTest
 
 @MainActor
 final class PracticeInviteViewModelTests: XCTestCase {
-    func testCreateInviteUsesGuestLanguagesAndProducesShareLink() async throws {
+    func testCreateInviteUsesOneTapDefaultsAndProducesShareLink() async throws {
         let service = RecordingFriendService()
         let viewModel = CreatePracticeChatViewModel(friendService: service)
-
-        viewModel.guestNativeLanguage = .french
-        viewModel.guestLearningLanguage = .none
 
         await viewModel.createInvite()
 
         XCTAssertEqual(service.createdInviteRequests, [
             PracticeInviteRequest(
-                guestNativeLanguage: .french,
+                guestNativeLanguage: .english,
                 guestLearningLanguage: .none
             )
         ])

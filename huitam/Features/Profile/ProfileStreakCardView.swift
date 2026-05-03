@@ -11,37 +11,43 @@ struct ProfileStreakCardView: View {
     }
 
     var body: some View {
-        HStack(spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             iconPanel
             progressPanel
         }
-        .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .listRowInsets(EdgeInsets(top: 2, leading: 16, bottom: 8, trailing: 16))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .premiumSurface(cornerRadius: 22, strength: 1.12)
+        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 8, trailing: 16))
         .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
     }
 
     private var iconPanel: some View {
-        VStack(spacing: 8) {
+        HStack(spacing: 13) {
             ZStack {
                 Circle()
                     .fill(tintColor.opacity(0.16))
-                    .frame(width: 60, height: 60)
+                    .frame(width: 52, height: 52)
                 Image(systemName: "flame.fill")
-                    .font(.title.weight(.semibold))
+                    .font(.system(size: 24, weight: .semibold))
                     .foregroundStyle(tintColor)
             }
 
-            Text("\(streakDays) days")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.primary)
-            Text("Steps streak")
-                .font(.caption2)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(streakDays) days")
+                    .font(.system(size: 19, weight: .semibold, design: .rounded))
+                    .foregroundStyle(PremiumTheme.textPrimary)
+                Text("Steps streak")
+                    .font(.caption.weight(.medium))
+                    .foregroundStyle(PremiumTheme.textSecondary)
+            }
+
+            Spacer(minLength: 0)
         }
-        .frame(width: 88)
-        .padding(.vertical, 12)
-        .background(tintColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 
     private var progressPanel: some View {
@@ -49,17 +55,17 @@ struct ProfileStreakCardView: View {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(streakDays)")
                     .font(.title3.weight(.semibold))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 Text("/\(goal)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
                 Spacer()
             }
 
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
                     Capsule()
-                        .fill(Color(.tertiarySystemFill))
+                        .fill(Color.white.opacity(0.10))
                     Capsule()
                         .fill(tintColor.gradient)
                         .frame(width: max(proxy.size.width * progress, 8))
@@ -67,12 +73,12 @@ struct ProfileStreakCardView: View {
             }
             .frame(height: 8)
 
-            HStack(spacing: 6) {
+            HStack(spacing: 0) {
                 ForEach(Array(Self.weekdays.enumerated()), id: \.element) { index, day in
                     VStack(spacing: 5) {
                         ZStack {
                             Circle()
-                                .fill(index < completedDays ? tintColor : Color(.tertiarySystemFill))
+                                .fill(index < completedDays ? tintColor : Color.white.opacity(0.10))
                             if index < completedDays {
                                 Image(systemName: "checkmark")
                                     .font(.system(size: 7, weight: .bold))
@@ -83,15 +89,16 @@ struct ProfileStreakCardView: View {
 
                         Text(day)
                             .font(.caption2)
-                            .foregroundStyle(index < completedDays ? .primary : .secondary)
+                            .foregroundStyle(index < completedDays ? PremiumTheme.textPrimary : PremiumTheme.textTertiary)
                             .lineLimit(1)
                             .minimumScaleFactor(0.65)
-                            .frame(width: 24)
                     }
-                    .frame(width: 24)
+                    .frame(maxWidth: .infinity)
                 }
             }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 
     private var completedDays: Int {

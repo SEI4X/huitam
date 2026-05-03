@@ -2,6 +2,7 @@ import Foundation
 
 @MainActor
 final class AppDependencyContainer {
+    let authService: AuthServicing
     let chatService: ChatServicing
     let profileService: ProfileServicing
     let studyCardService: StudyCardServicing
@@ -11,8 +12,10 @@ final class AppDependencyContainer {
     let settingsService: SettingsServicing
     let onboardingService: OnboardingServicing
     let subscriptionService: SubscriptionServicing
+    let presenceService: PresenceServicing
 
     init(
+        authService: AuthServicing,
         chatService: ChatServicing,
         profileService: ProfileServicing,
         studyCardService: StudyCardServicing,
@@ -21,8 +24,10 @@ final class AppDependencyContainer {
         aiAssistService: AIAssistServicing,
         settingsService: SettingsServicing,
         onboardingService: OnboardingServicing,
-        subscriptionService: SubscriptionServicing
+        subscriptionService: SubscriptionServicing,
+        presenceService: PresenceServicing
     ) {
+        self.authService = authService
         self.chatService = chatService
         self.profileService = profileService
         self.studyCardService = studyCardService
@@ -32,10 +37,12 @@ final class AppDependencyContainer {
         self.settingsService = settingsService
         self.onboardingService = onboardingService
         self.subscriptionService = subscriptionService
+        self.presenceService = presenceService
     }
 
     static func mock() -> AppDependencyContainer {
         AppDependencyContainer(
+            authService: MockAuthService(),
             chatService: MockChatService(),
             profileService: MockProfileService(),
             studyCardService: MockStudyCardService(),
@@ -44,7 +51,8 @@ final class AppDependencyContainer {
             aiAssistService: MockAIAssistService(),
             settingsService: MockSettingsService(),
             onboardingService: MockOnboardingService(),
-            subscriptionService: MockSubscriptionService()
+            subscriptionService: MockSubscriptionService(),
+            presenceService: MockPresenceService()
         )
     }
 
@@ -52,6 +60,7 @@ final class AppDependencyContainer {
         FirebaseBootstrap.configureIfNeeded()
 
         let authSession = FirebaseAuthSession()
+        let authService = FirebaseAuthService()
         let settingsService = FirebaseSettingsService(authSession: authSession)
         let translationService = FirebaseTranslationService()
         let chatService = FirebaseChatService(
@@ -60,6 +69,7 @@ final class AppDependencyContainer {
         )
 
         return AppDependencyContainer(
+            authService: authService,
             chatService: chatService,
             profileService: FirebaseProfileService(authSession: authSession),
             studyCardService: FirebaseStudyCardService(authSession: authSession),
@@ -71,7 +81,8 @@ final class AppDependencyContainer {
                 authSession: authSession,
                 settingsService: settingsService
             ),
-            subscriptionService: FirebaseSubscriptionService(authSession: authSession)
+            subscriptionService: FirebaseSubscriptionService(authSession: authSession),
+            presenceService: FirebasePresenceService(authSession: authSession)
         )
     }
 }

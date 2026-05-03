@@ -36,6 +36,7 @@ enum MockAppData {
 
     static let camille = ChatParticipant(
         id: camilleID,
+        uid: "firebase-camille",
         nickname: "camille",
         displayName: "Camille",
         avatarSystemImage: "person.crop.circle.fill",
@@ -45,6 +46,7 @@ enum MockAppData {
 
     static let mateo = ChatParticipant(
         id: mateoID,
+        uid: "firebase-mateo",
         nickname: "mateo",
         displayName: "Mateo",
         avatarSystemImage: "person.crop.circle.fill",
@@ -112,7 +114,7 @@ enum MockAppData {
                 translatedText: "Can we meet after work?",
                 originalText: "On peut se voir après le travail ?",
                 direction: .incoming,
-                deliveryState: .delivered
+                deliveryState: .sent
             )
         ],
         mateoChatID: [

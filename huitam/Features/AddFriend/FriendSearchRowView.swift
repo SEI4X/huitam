@@ -9,14 +9,16 @@ struct FriendSearchRowView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(result.displayName)
                     .font(.body)
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 Text("@\(result.nickname)")
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
             }
             Spacer()
             Text(result.nativeLanguage.shortCode)
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textTertiary)
         }
+        .padding(.vertical, 6)
     }
 }

@@ -38,11 +38,6 @@ final class FirebaseFriendService: FriendServicing {
         ]
     }
 
-    func sharePayload() async throws -> String {
-        let uid = try await authSession.currentUserID()
-        return "huitam://user/\(uid)"
-    }
-
     func loadInvite(id: String) async throws -> PracticeInvite {
         let inviteID = id
             .replacingOccurrences(of: "https://huitam.com/invite/", with: "")
@@ -100,8 +95,16 @@ final class FirebaseFriendService: FriendServicing {
 
     func acceptInvite(_ invite: PracticeInvite, as role: ChatParticipantRole) async throws -> ChatSummary {
         let uid = try await authSession.currentUserID()
-        let chatID = UUID()
         let inviterUID = try await inviterUID(for: invite)
+        guard inviterUID != uid else {
+            throw FriendServiceError.cannotOpenSelf
+        }
+
+        if let existingChat = try await existingChatSummary(with: inviterUID, currentUID: uid) {
+            return existingChat
+        }
+
+        let chatID = UUID()
         let guestProfile = try await FirebaseProfileService(authSession: authSession, db: db).loadProfile()
         let participant = ChatParticipant(
             id: StableID.uuid(from: inviterUID),
@@ -142,6 +145,7 @@ final class FirebaseFriendService: FriendServicing {
 
         return ChatSummary(
             id: chatID,
+            documentID: chatID.uuidString,
             participant: participant,
             lastMessagePreview: "",
             timestamp: Date(),
@@ -153,11 +157,64 @@ final class FirebaseFriendService: FriendServicing {
         )
     }
 
+    func openAccountChat(nickname: String, as role: ChatParticipantRole) async throws -> ChatSummary {
+        let normalizedNickname = nickname.lowercased().trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = try await FirebaseAsync.call(
+            "openAccountChat",
+            payload: [
+                "nickname": normalizedNickname,
+                "role": FirebaseDocumentMapper.data(from: role)
+            ]
+        )
+        return try FirebaseDocumentMapper.chatSummary(fromCallable: result)
+    }
+
     private func inviterUID(for invite: PracticeInvite) async throws -> String {
         let snapshot = try await FirebaseAsync.getDocument(db.collection("invites").document(invite.id))
         guard let inviterUID = snapshot.data()?["inviterUID"] as? String else {
             throw FirebaseMappingError.missingField("inviterUID")
         }
         return inviterUID
+    }
+
+    private func existingChatSummary(with participantUID: String, currentUID uid: String) async throws -> ChatSummary? {
+        let snapshot = try await FirebaseAsync.getDocuments(
+            db.collection("chats")
+                .whereField("participantUIDs", arrayContains: uid)
+        )
+
+        guard let document = snapshot.documents.first(where: { document in
+            let participantUIDs = document.data()["participantUIDs"] as? [String] ?? []
+            return participantUIDs.contains(participantUID)
+        }) else {
+            return nil
+        }
+
+        return try await chatSummary(chatID: document.documentID, participantUID: participantUID, currentUID: uid)
+    }
+
+    private func chatSummary(chatID: String, participantUID: String, currentUID uid: String) async throws -> ChatSummary {
+        let chatSnapshot = try await FirebaseAsync.getDocument(db.collection("chats").document(chatID))
+        let profileSnapshot = try await FirebaseAsync.getDocument(db.collection("users").document(participantUID))
+        return try FirebaseDocumentMapper.chatSummary(
+            documentID: chatID,
+            data: chatSnapshot.data() ?? [:],
+            currentUID: uid,
+            participantProfile: profileSnapshot.data() ?? [:]
+        )
+    }
+}
+
+enum FriendServiceError: LocalizedError {
+    case accountNotFound
+    case cannotOpenSelf
+
+    var errorDescription: String? {
+        switch self {
+        case .accountNotFound:
+            "This huitam account was not found."
+        case .cannotOpenSelf:
+            "This is your own huitam link."
+        }
     }
 }

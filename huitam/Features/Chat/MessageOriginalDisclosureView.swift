@@ -6,9 +6,10 @@ struct MessageOriginalDisclosureView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Divider()
+                .overlay(Color.white.opacity(0.16))
             Text(originalText)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textSecondary)
                 .textSelection(.enabled)
         }
         .transition(.opacity.combined(with: .move(edge: .top)))

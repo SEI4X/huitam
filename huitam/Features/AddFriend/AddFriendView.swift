@@ -1,29 +1,68 @@
 import SwiftUI
+import UIKit
 
 struct AddFriendView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var viewModel: AddFriendViewModel
-    @State private var isPracticeChatPresented = false
+    @State private var shareItem: ActivityShareItem?
     @State private var isQRScannerPresented = false
+    @State private var didCopyInviteLink = false
 
     private let container: AppDependencyContainer
+    private let defaultInviteRole: ChatParticipantRole
+    private let accountLink: AccountShareLink
+    private let onOpenChat: (ChatSummary) -> Void
 
-    init(container: AppDependencyContainer) {
+    init(
+        container: AppDependencyContainer,
+        defaultInviteRole: ChatParticipantRole = .learner(.english),
+        currentNickname: String = "",
+        onOpenChat: @escaping (ChatSummary) -> Void = { _ in }
+    ) {
         self.container = container
+        self.defaultInviteRole = defaultInviteRole
+        self.accountLink = AccountShareLink(nickname: currentNickname)
+        self.onOpenChat = onOpenChat
         _viewModel = State(initialValue: AddFriendViewModel(friendService: container.friendService))
     }
 
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Button {
-                        isPracticeChatPresented = true
-                    } label: {
-                        Label("Create Practice Chat", systemImage: "link.badge.plus")
+                Section("Invite") {
+                    HStack {
+                        Spacer()
+                        InviteQRCodeView(url: accountLink.url)
+                        Spacer()
                     }
+
+                    Button {
+                        copyInviteLink(accountLink.url)
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: didCopyInviteLink ? "checkmark.circle.fill" : "link")
+                                .font(.callout.weight(.semibold))
+                            Text(accountLink.url.absoluteString)
+                                .font(.footnote.weight(.medium))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Spacer()
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(didCopyInviteLink ? .green : PremiumTheme.textSecondary)
+
+                    Button {
+                        shareItem = ActivityShareItem(url: accountLink.url)
+                    } label: {
+                        Label("Share Invite Link", systemImage: "square.and.arrow.up")
+                            .font(.body.weight(.semibold))
+                    }
+                    .foregroundStyle(.white)
                 }
+                .listRowBackground(PremiumTheme.surface)
+                .transition(.opacity.combined(with: .move(edge: .top)))
 
                 Section {
                     TextField("Nickname", text: Binding(
@@ -32,6 +71,8 @@ struct AddFriendView: View {
                     ))
                     .textInputAutocapitalization(.never)
                     .autocorrectionDisabled()
+                    .foregroundStyle(.white)
+                    .tint(.white)
                     .onSubmit {
                         Task { await viewModel.search() }
                     }
@@ -41,68 +82,53 @@ struct AddFriendView: View {
                     } label: {
                         Label("Search", systemImage: "magnifyingglass")
                     }
-                }
-
-                Section {
-                    Button {
-                        Task { await viewModel.loadSharePayload() }
-                    } label: {
-                        Label("Share My Nickname", systemImage: "square.and.arrow.up")
-                    }
+                    .foregroundStyle(.white)
 
                     Button {
                         isQRScannerPresented = true
                     } label: {
-                        Label("Scan QR Code", systemImage: "qrcode.viewfinder")
+                        Label(viewModel.isAcceptingInvite ? "Opening Chat" : "Scan QR Code", systemImage: "qrcode.viewfinder")
                     }
+                    .foregroundStyle(.white)
+                    .disabled(viewModel.isAcceptingInvite)
                 }
-
-                if let payload = viewModel.sharePayload {
-                    Section("Share") {
-                        Text(payload)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-
-                if let scannedInvite = viewModel.scannedInvite {
-                    Section("Scanned Invite") {
-                        NavigationLink {
-                            InvitedFriendView(invite: scannedInvite, container: container)
-                        } label: {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(scannedInvite.inviterDisplayName)
-                                    .font(.body.weight(.medium))
-                                Text("Practice \(scannedInvite.inviterLearningLanguage.displayName)")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-                }
+                .listRowBackground(PremiumTheme.surface)
 
                 if let errorMessage = viewModel.errorMessage {
                     Section {
-                        Text(errorMessage)
-                            .font(.footnote)
-                            .foregroundStyle(.red)
+                        HStack(alignment: .top, spacing: 10) {
+                            Image(systemName: "exclamationmark.circle.fill")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color(red: 1, green: 0.42, blue: 0.42))
+                                .padding(.top, 1)
+
+                            Text(errorMessage)
+                                .font(.system(size: 13, weight: .medium, design: .rounded))
+                                .foregroundStyle(Color.white.opacity(0.82))
+                                .lineSpacing(2)
+                        }
+                        .padding(.vertical, 4)
                     }
+                    .listRowBackground(Color(red: 0.22, green: 0.04, blue: 0.06).opacity(0.64))
                 }
 
-                Section("Results") {
-                    if viewModel.results.isEmpty && viewModel.hasSearched {
+                if viewModel.results.isEmpty && viewModel.hasSearched {
+                    Section("Results") {
                         ContentUnavailableView("No Results", systemImage: "person.crop.circle.badge.questionmark")
                             .listRowSeparator(.hidden)
-                    } else {
+                            .foregroundStyle(.white)
+                    }
+                    .listRowBackground(PremiumTheme.surface)
+                } else if viewModel.results.isEmpty == false {
+                    Section("Results") {
                         ForEach(viewModel.results) { result in
                             FriendSearchRowView(result: result)
                         }
                     }
+                    .listRowBackground(PremiumTheme.surface)
                 }
             }
+            .premiumScrollBackground(glowPosition: .top, intensity: 0.7)
             .navigationTitle("Add Friend")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -110,20 +136,20 @@ struct AddFriendView: View {
                     Button("Close") {
                         dismiss()
                     }
+                    .foregroundStyle(.white)
                 }
             }
             .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.results)
-            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.sharePayload)
-            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.scannedInvite)
-            .sheet(isPresented: $isPracticeChatPresented) {
-                CreatePracticeChatView(container: container)
+            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: viewModel.isAcceptingInvite)
+            .sheet(item: $shareItem) { item in
+                ActivityShareView(items: [item.url])
             }
             .sheet(isPresented: $isQRScannerPresented) {
                 QRCodeScannerView(
                     onCodeScanned: { payload in
                         isQRScannerPresented = false
                         Task {
-                            await viewModel.openScannedInvitePayload(payload)
+                            await viewModel.acceptInvitePayload(payload, as: defaultInviteRole)
                         }
                     },
                     onCancel: {
@@ -131,6 +157,25 @@ struct AddFriendView: View {
                     }
                 )
                 .ignoresSafeArea()
+            }
+            .onChange(of: viewModel.openedChat) { _, chat in
+                guard let chat else { return }
+                viewModel.clearOpenedChat()
+                dismiss()
+                onOpenChat(chat)
+            }
+        }
+    }
+
+    private func copyInviteLink(_ url: URL) {
+        UIPasteboard.general.string = url.absoluteString
+        withAnimation(AppMotion.quickStateChange(reduceMotion: reduceMotion)) {
+            didCopyInviteLink = true
+        }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.4))
+            withAnimation(AppMotion.quickStateChange(reduceMotion: reduceMotion)) {
+                didCopyInviteLink = false
             }
         }
     }

@@ -15,10 +15,6 @@ final class MockFriendService: FriendServicing {
         }
     }
 
-    func sharePayload() async throws -> String {
-        "huitam://add/alex"
-    }
-
     func loadInvite(id: String) async throws -> PracticeInvite {
         MockAppData.sampleInvite
     }
@@ -52,6 +48,27 @@ final class MockFriendService: FriendServicing {
             practiceLanguage: role.learningLanguage,
             currentUserRole: role,
             participantRole: .learner(invite.inviterLearningLanguage)
+        )
+    }
+
+    func openAccountChat(nickname: String, as role: ChatParticipantRole) async throws -> ChatSummary {
+        ChatSummary(
+            id: UUID(),
+            participant: ChatParticipant(
+                id: MockAppData.currentUserID,
+                nickname: nickname,
+                displayName: nickname.capitalized,
+                avatarSystemImage: "person.crop.circle.fill",
+                nativeLanguage: .english,
+                learningLanguage: .language(.english)
+            ),
+            lastMessagePreview: "",
+            timestamp: Date(),
+            unreadCount: 0,
+            nativeLanguage: .russian,
+            practiceLanguage: role.learningLanguage,
+            currentUserRole: role,
+            participantRole: .learner(.english)
         )
     }
 }

@@ -4,26 +4,35 @@ struct ChatRowView: View {
     @Environment(\.appTintColor) private var tintColor
 
     let chat: ChatSummary
+    var presence: PresenceStatus = .offline
 
     var body: some View {
         HStack(spacing: 12) {
-            AvatarView(systemImage: chat.participant.avatarSystemImage, size: 42, seed: chat.participant.id)
+            PresenceAvatarView(
+                systemImage: chat.participant.avatarSystemImage,
+                size: 44,
+                seed: chat.participant.id,
+                presence: presence
+            )
 
             VStack(alignment: .leading, spacing: 4) {
-                HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(chat.participant.displayName)
                         .font(.body)
                         .fontWeight(chat.unreadCount > 0 ? .semibold : .regular)
+                        .foregroundStyle(PremiumTheme.textPrimary)
+                        .lineLimit(1)
                     Spacer()
                     Text(chat.timestamp, style: .time)
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(PremiumTheme.textTertiary)
+                        .monospacedDigit()
                 }
 
                 HStack(spacing: 8) {
                     Text(chat.lastMessagePreview)
                         .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(PremiumTheme.textSecondary)
                         .lineLimit(1)
 
                     Spacer(minLength: 8)
@@ -45,10 +54,16 @@ struct ChatRowView: View {
                         .font(.caption2)
                         .lineLimit(1)
                 }
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textTertiary)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Image(systemName: "chevron.right")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(PremiumTheme.textTertiary)
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .contentShape(Rectangle())
     }
 

@@ -43,6 +43,18 @@ enum FirebaseAsync {
         }
     }
 
+    static func commit(_ batch: WriteBatch) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            batch.commit { error in
+                if let error {
+                    continuation.resume(throwing: error)
+                } else {
+                    continuation.resume(returning: ())
+                }
+            }
+        }
+    }
+
     static func delete(_ reference: DocumentReference) async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             reference.delete { error in

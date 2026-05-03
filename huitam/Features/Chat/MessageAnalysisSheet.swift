@@ -20,16 +20,20 @@ struct MessageAnalysisSheet: View {
                 }
                 .padding(16)
             }
-            .background(Color(.systemGroupedBackground))
+            .background {
+                PremiumScreenBackground(glowPosition: .top, intensity: 0.68)
+                    .ignoresSafeArea()
+            }
             .navigationTitle("Message")
             .navigationBarTitleDisplayMode(.inline)
+            .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Close") {
                         dismiss()
                     }
-                    .foregroundStyle(.primary)
-                    .tint(.primary)
+                    .foregroundStyle(.white)
+                    .tint(.white)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -56,15 +60,16 @@ struct MessageAnalysisSheet: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text("Select words")
                     .font(.headline)
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 Text(summaryText)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
             }
 
             Spacer()
         }
         .padding(14)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .premiumSurface(cornerRadius: 20, strength: 1.15)
     }
 
     private var summaryText: String {
@@ -79,7 +84,7 @@ struct MessageAnalysisSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Words")
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textSecondary)
 
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 138), spacing: 10)], spacing: 10) {
                 ForEach(analysis.tokens) { token in
@@ -103,19 +108,20 @@ struct MessageAnalysisSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Phrases")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
 
                 VStack(spacing: 8) {
                     ForEach(analysis.phraseSuggestions, id: \.self) { phrase in
                         HStack {
                             Text(phrase)
                                 .font(.body)
+                                .foregroundStyle(PremiumTheme.textPrimary)
                             Spacer()
                             Image(systemName: "quote.bubble")
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(PremiumTheme.textTertiary)
                         }
                         .padding(12)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .premiumSurface(cornerRadius: 16, strength: 0.9)
                     }
                 }
             }
@@ -128,7 +134,7 @@ struct MessageAnalysisSheet: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Grammar")
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
 
                 VStack(spacing: 8) {
                     ForEach(analysis.grammarNotes) { note in
@@ -136,16 +142,17 @@ struct MessageAnalysisSheet: View {
                             HStack {
                                 Text(note.title)
                                     .font(.body.weight(.semibold))
+                                    .foregroundStyle(PremiumTheme.textPrimary)
                                 Spacer()
                                 Image(systemName: "text.book.closed")
-                                    .foregroundStyle(.secondary)
+                                    .foregroundStyle(PremiumTheme.textTertiary)
                             }
                             Text(note.explanation)
                                 .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                                .foregroundStyle(PremiumTheme.textSecondary)
                         }
                         .padding(12)
-                        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .premiumSurface(cornerRadius: 16, strength: 0.9)
                     }
                 }
             }
@@ -167,29 +174,29 @@ private struct MessageTokenCard: View {
                 HStack {
                     Text(token.text)
                         .font(.body.weight(.semibold))
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(PremiumTheme.textPrimary)
                     Spacer()
                     Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                        .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                        .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(PremiumTheme.textTertiary))
                         .contentTransition(.symbolEffect(.replace))
                 }
 
                 Text(token.translation)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textSecondary)
 
                 Text(token.partOfSpeech)
                     .font(.caption.weight(.medium))
-                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                    .foregroundStyle(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(PremiumTheme.textTertiary))
                     .padding(.horizontal, 8)
                     .padding(.vertical, 4)
-                    .background((isSelected ? tintColor.opacity(0.12) : Color(.tertiarySystemFill)), in: Capsule())
+                    .background((isSelected ? tintColor.opacity(0.18) : Color.white.opacity(0.08)), in: Capsule())
             }
             .padding(12)
-            .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(PremiumTheme.surfaceStrong, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(isSelected ? tintColor.opacity(0.55) : Color.clear, lineWidth: 1)
+                    .stroke(isSelected ? tintColor.opacity(0.55) : PremiumTheme.hairline, lineWidth: 1)
             }
             .scaleEffect(isSelected && reduceMotion == false ? 1.015 : 1)
         }

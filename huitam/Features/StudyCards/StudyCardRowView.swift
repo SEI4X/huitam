@@ -8,20 +8,22 @@ struct StudyCardRowView: View {
             HStack {
                 Text(card.frontText)
                     .font(.body.weight(.semibold))
+                    .foregroundStyle(PremiumTheme.textPrimary)
                 Spacer()
                 Text(card.type.displayName)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(PremiumTheme.textTertiary)
             }
             Text(card.backText)
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textSecondary)
             if card.note.isEmpty == false {
                 Text(card.note)
                     .font(.caption)
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(PremiumTheme.textTertiary)
             }
         }
-        .padding(.vertical, 4)
+        .padding(.horizontal, 2)
+        .padding(.vertical, 8)
     }
 }

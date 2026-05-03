@@ -1,6 +1,19 @@
 import UIKit
 import UserNotifications
 
+@MainActor
+protocol NotificationPermissionServicing {
+    func updateRegistration(enabled: Bool) async -> Bool
+}
+
+struct AppNotificationPermissionService: NotificationPermissionServicing {
+    nonisolated init() {}
+
+    func updateRegistration(enabled: Bool) async -> Bool {
+        await NotificationPermissionCenter.updateRegistration(enabled: enabled)
+    }
+}
+
 enum NotificationPermissionCenter {
     static func updateRegistration(enabled: Bool) async -> Bool {
         guard enabled else {

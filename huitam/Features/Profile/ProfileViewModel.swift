@@ -11,11 +11,15 @@ final class ProfileViewModel {
 
     init(profileService: ProfileServicing) {
         self.profileService = profileService
+        profile = profileService.cachedProfile
     }
 
     func load() async {
         do {
-            profile = try await profileService.loadProfile()
+            let loadedProfile = try await profileService.loadProfile()
+            if profile != loadedProfile {
+                profile = loadedProfile
+            }
         } catch {
             errorMessage = error.localizedDescription
         }

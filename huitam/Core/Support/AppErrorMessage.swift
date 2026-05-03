@@ -5,17 +5,23 @@ enum AppErrorMessage {
         let nsError = error as NSError
         let description = error.localizedDescription
 
+        if description.localizedCaseInsensitiveContains("No APNS token specified") {
+            return "Notifications are almost ready. Please try again in a moment."
+        }
+
         if nsError.domain == "FIRFirestoreErrorDomain", nsError.code == 7 {
-            return "Firebase access is not configured yet. Deploy Firestore rules and register the App Check debug token."
+            return "We couldn't sync your account yet. Please try again in a moment."
         }
 
         if nsError.domain == "com.firebase.functions", nsError.code == 7 {
-            return "This action needs server permissions. Check Firebase Functions and App Check configuration."
+            return "We couldn't complete this action yet. Please try again in a moment."
         }
 
         if description.localizedCaseInsensitiveContains("restricted to administrators") ||
-            description.localizedCaseInsensitiveContains("permission") {
-            return "Firebase access is not configured yet. Deploy Firestore rules and register the App Check debug token."
+            description.localizedCaseInsensitiveContains("permission") ||
+            description.localizedCaseInsensitiveContains("app attestation") ||
+            description.localizedCaseInsensitiveContains("app check") {
+            return "We couldn't sync your account yet. Please try again in a moment."
         }
 
         return description

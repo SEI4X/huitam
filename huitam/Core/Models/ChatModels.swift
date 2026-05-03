@@ -2,6 +2,7 @@ import Foundation
 
 struct ChatSummary: Identifiable, Hashable {
     var id: UUID
+    var documentID: String = ""
     var participant: ChatParticipant
     var lastMessagePreview: String
     var timestamp: Date
@@ -44,9 +45,10 @@ enum MessageDirection: Hashable {
 }
 
 enum MessageDeliveryState: Hashable {
+    case sending
     case sent
-    case delivered
     case read
+    case failed
 }
 
 struct ChatMessage: Identifiable, Hashable {
@@ -54,11 +56,21 @@ struct ChatMessage: Identifiable, Hashable {
     var chatID: UUID
     var senderID: UUID
     var timestamp: Date
+    var updatedAt: Date = Date()
     var translatedText: String
     var originalText: String
     var direction: MessageDirection
     var deliveryState: MessageDeliveryState
+    var errorMessage: String? = nil
     var correction: MessageCorrection? = nil
+    var reply: MessageReplyPreview? = nil
+}
+
+struct MessageReplyPreview: Hashable {
+    var messageID: UUID
+    var senderName: String
+    var text: String
+    var originalText: String?
 }
 
 struct MessageCorrection: Hashable {

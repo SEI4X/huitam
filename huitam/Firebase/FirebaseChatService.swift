@@ -4,16 +4,14 @@ import Foundation
 @MainActor
 final class FirebaseChatService: ChatServicing {
     private let authSession: FirebaseAuthSession
-    private let translationService: TranslationServicing
     private let db: Firestore
 
     init(
         authSession: FirebaseAuthSession,
-        translationService: TranslationServicing,
+        translationService _: TranslationServicing,
         db: Firestore = Firestore.firestore()
     ) {
         self.authSession = authSession
-        self.translationService = translationService
         self.db = db
     }
 
@@ -42,102 +40,200 @@ final class FirebaseChatService: ChatServicing {
         return summaries
     }
 
-    func loadMessages(chatID: UUID) async throws -> [ChatMessage] {
-        let uid = try await authSession.currentUserID()
-        let snapshot = try await FirebaseAsync.getDocuments(
-            messagesCollection(chatID: chatID)
-                .order(by: "createdAt")
-                .limit(to: 100)
-        )
+    func chatSummaryUpdates() -> AsyncStream<Result<[ChatSummary], Error>> {
+        AsyncStream { continuation in
+            Task { @MainActor in
+                do {
+                    let uid = try await authSession.currentUserID()
+                    let query = db.collection("chats")
+                        .whereField("participantUIDs", arrayContains: uid)
+                        .order(by: "updatedAt", descending: true)
 
-        return snapshot.documents.map { document in
-            FirebaseDocumentMapper.message(
-                documentID: document.documentID,
-                data: document.data(),
-                currentUID: uid,
-                chatID: chatID
-            )
+                    let listener = query.addSnapshotListener { [weak self] snapshot, error in
+                        if let error {
+                            continuation.yield(.failure(error))
+                            return
+                        }
+
+                        guard let self, let documents = snapshot?.documents else {
+                            continuation.yield(.success([]))
+                            return
+                        }
+
+                        Task { @MainActor in
+                            do {
+                                let summaries = try await self.chatSummaries(from: documents, currentUID: uid)
+                                continuation.yield(.success(summaries))
+                            } catch {
+                                continuation.yield(.failure(error))
+                            }
+                        }
+                    }
+
+                    continuation.onTermination = { _ in
+                        listener.remove()
+                    }
+                } catch {
+                    continuation.yield(.failure(error))
+                    continuation.finish()
+                }
+            }
         }
     }
 
-    func sendMessage(chatID: UUID, draft: String) async throws -> ChatMessage {
+    func loadRecentMessages(chat: ChatSummary, limit: Int) async throws -> [ChatMessage] {
         let uid = try await authSession.currentUserID()
-        let chatReference = db.collection("chats").document(chatID.uuidString)
-        let chatSnapshot = try await FirebaseAsync.getDocument(chatReference)
-        let chatData = chatSnapshot.data() ?? [:]
-        let participantUIDs = chatData["participantUIDs"] as? [String] ?? []
-        let recipientUID = participantUIDs.first { $0 != uid }
-        let roles = chatData["roles"] as? [String: [String: Any]] ?? [:]
-        let currentRole = role(for: uid, in: roles)
-        let recipientRole = recipientUID.map { role(for: $0, in: roles) } ?? .companion
-        let currentProfile = try await profile(uid: uid)
-        let recipientProfile: UserProfile?
-        if let recipientUID {
-            recipientProfile = try await profile(uid: recipientUID)
-        } else {
-            recipientProfile = nil
-        }
-        let sourceLanguage = messageLanguage(
-            role: currentRole,
-            nativeLanguage: currentProfile.nativeLanguage
+        let snapshot = try await FirebaseAsync.getDocuments(
+            messagesCollection(chat: chat)
+                .order(by: "createdAt", descending: true)
+                .limit(to: limit)
         )
-        let targetLanguage = messageLanguage(
-            role: recipientRole,
-            nativeLanguage: recipientProfile?.nativeLanguage ?? sourceLanguage
-        )
-        let translated = try await translationService.translate(draft, from: sourceLanguage, to: targetLanguage)
-        var displayTexts = [uid: draft]
-        if let recipientUID {
-            displayTexts[recipientUID] = translated
-        }
 
-        let messageID = UUID()
-        let messageData: [String: Any] = [
+        return messages(from: snapshot.documents, currentUID: uid, chat: chat)
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    func loadEarlierMessages(chat: ChatSummary, before oldestMessage: ChatMessage, limit: Int) async throws -> [ChatMessage] {
+        let uid = try await authSession.currentUserID()
+        let snapshot = try await FirebaseAsync.getDocuments(
+            messagesCollection(chat: chat)
+                .whereField("createdAt", isLessThan: Timestamp(date: oldestMessage.timestamp))
+                .order(by: "createdAt", descending: true)
+                .limit(to: limit)
+        )
+
+        return messages(from: snapshot.documents, currentUID: uid, chat: chat)
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
+    func messageUpdates(chat: ChatSummary, after date: Date?) -> AsyncStream<Result<[ChatMessage], Error>> {
+        AsyncStream { continuation in
+            Task { @MainActor in
+                do {
+                    let uid = try await authSession.currentUserID()
+                    var query: Query = messagesCollection(chat: chat)
+                        .order(by: "updatedAt")
+
+                    if let date {
+                        query = query.whereField("updatedAt", isGreaterThan: Timestamp(date: date))
+                    }
+
+                    let listener = query.addSnapshotListener { [weak self] snapshot, error in
+                        if let error {
+                            continuation.yield(.failure(error))
+                            return
+                        }
+
+                        guard let self, let documents = snapshot?.documents else {
+                            continuation.yield(.success([]))
+                            return
+                        }
+
+                        let messages = self.messages(from: documents, currentUID: uid, chat: chat)
+                        continuation.yield(.success(messages))
+                    }
+
+                    continuation.onTermination = { _ in
+                        listener.remove()
+                    }
+                } catch {
+                    continuation.yield(.failure(error))
+                    continuation.finish()
+                }
+            }
+        }
+    }
+
+    func sendMessage(chat: ChatSummary, draft: String, localID: UUID, reply: MessageReplyPreview?) async throws -> ChatMessage {
+        let uid = try await authSession.currentUserID()
+        let chatReference = db.collection("chats").document(remoteDocumentID(for: chat))
+        let messageID = localID
+        let messageReference = messagesCollection(chat: chat).document(messageID.uuidString)
+        var messageData: [String: Any] = [
             "senderUID": uid,
             "originalText": draft,
-            "translatedText": translated,
-            "displayTexts": displayTexts,
+            "translatedText": draft,
+            "displayTexts": [uid: draft],
             "deliveryState": "sent",
-            "createdAt": FieldValue.serverTimestamp()
+            "translationState": "pending",
+            "createdAt": FieldValue.serverTimestamp(),
+            "updatedAt": FieldValue.serverTimestamp()
         ]
-
-        var lastMessagePreviews = [uid: draft]
-        if let recipientUID {
-            lastMessagePreviews[recipientUID] = translated
+        if let reply {
+            messageData["replyToMessageID"] = reply.messageID.uuidString
+            messageData["replySenderName"] = reply.senderName
+            messageData["replyPreviewText"] = reply.text
+            if let originalText = reply.originalText, originalText.isEmpty == false {
+                messageData["replyOriginalText"] = originalText
+            }
         }
 
-        try await FirebaseAsync.setData(messageData, on: messagesCollection(chatID: chatID).document(messageID.uuidString), merge: false)
-        try await FirebaseAsync.setData(
+        let batch = db.batch()
+        batch.setData(messageData, forDocument: messageReference, merge: false)
+        batch.setData(
             [
-                "lastMessagePreview": translated,
-                "lastMessagePreviews": lastMessagePreviews,
+                "lastMessagePreview": draft,
+                "lastMessagePreviews": [uid: draft],
                 "updatedAt": FieldValue.serverTimestamp(),
                 "lastSenderUID": uid
             ],
-            on: chatReference
+            forDocument: chatReference,
+            merge: true
         )
-
-        if let recipientUID {
-            _ = try? await FirebaseAsync.call(
-                "sendChatNotification",
-                payload: [
-                    "chatId": chatID.uuidString,
-                    "recipientUid": recipientUID,
-                    "preview": translated
-                ]
-            )
-        }
+        try await FirebaseAsync.commit(batch)
 
         return ChatMessage(
             id: messageID,
-            chatID: chatID,
+            chatID: chat.id,
             senderID: StableID.uuid(from: uid),
             timestamp: Date(),
+            updatedAt: Date(),
             translatedText: draft,
             originalText: draft,
             direction: .outgoing,
-            deliveryState: .sent
+            deliveryState: .sent,
+            reply: reply
         )
+    }
+
+    func markChatRead(chat: ChatSummary) async throws {
+        let uid = try await authSession.currentUserID()
+        let chatReference = db.collection("chats").document(remoteDocumentID(for: chat))
+        let snapshot = try await FirebaseAsync.getDocuments(
+            messagesCollection(chat: chat)
+                .order(by: "createdAt", descending: true)
+                .limit(to: 60)
+        )
+
+        let batch = db.batch()
+        batch.setData(
+            [
+                "unreadCounts.\(uid)": 0
+            ],
+            forDocument: chatReference,
+            merge: true
+        )
+
+        for document in snapshot.documents {
+            let data = document.data()
+            let senderUID = data["senderUID"] as? String
+            let deliveryState = data["deliveryState"] as? String
+            guard senderUID != uid, deliveryState != "read" else { continue }
+            batch.setData(
+                [
+                    "deliveryState": "read",
+                    "updatedAt": FieldValue.serverTimestamp()
+                ],
+                forDocument: document.reference,
+                merge: true
+            )
+        }
+
+        try await FirebaseAsync.commit(batch)
+    }
+
+    func deleteMessage(chat: ChatSummary, message: ChatMessage) async throws {
+        try await FirebaseAsync.delete(messagesCollection(chat: chat).document(message.id.uuidString))
     }
 
     func analyze(message: ChatMessage) async throws -> MessageAnalysis {
@@ -178,23 +274,47 @@ final class FirebaseChatService: ChatServicing {
         )
     }
 
-    private func messagesCollection(chatID: UUID) -> CollectionReference {
-        db.collection("chats").document(chatID.uuidString).collection("messages")
+    private func messagesCollection(chat: ChatSummary) -> CollectionReference {
+        db.collection("chats").document(remoteDocumentID(for: chat)).collection("messages")
     }
 
-    private func role(for uid: String, in roles: [String: [String: Any]]) -> ChatParticipantRole {
-        (try? FirebaseDocumentMapper.role(from: roles[uid] ?? ["kind": "companion"])) ?? .companion
+    private func messages(
+        from documents: [QueryDocumentSnapshot],
+        currentUID uid: String,
+        chat: ChatSummary
+    ) -> [ChatMessage] {
+        documents.map { document in
+            FirebaseDocumentMapper.message(
+                documentID: document.documentID,
+                data: document.data(),
+                currentUID: uid,
+                chatID: chat.id
+            )
+        }
     }
 
-    private func profile(uid: String) async throws -> UserProfile {
-        let snapshot = try await FirebaseAsync.getDocument(db.collection("users").document(uid))
-        return FirebaseDocumentMapper.profile(uid: uid, from: snapshot.data() ?? [:])
+    private func remoteDocumentID(for chat: ChatSummary) -> String {
+        chat.documentID.isEmpty ? chat.id.uuidString : chat.documentID
     }
 
-    private func messageLanguage(
-        role: ChatParticipantRole,
-        nativeLanguage: AppLanguage
-    ) -> AppLanguage {
-        role.learningLanguage ?? nativeLanguage
+    private func chatSummaries(
+        from documents: [QueryDocumentSnapshot],
+        currentUID uid: String
+    ) async throws -> [ChatSummary] {
+        var summaries: [ChatSummary] = []
+        for document in documents {
+            let data = document.data()
+            let participantUID = ((data["participantUIDs"] as? [String]) ?? []).first { $0 != uid } ?? uid
+            let profileSnapshot = try await FirebaseAsync.getDocument(db.collection("users").document(participantUID))
+            let profileData = profileSnapshot.data() ?? [:]
+            summaries.append(try FirebaseDocumentMapper.chatSummary(
+                documentID: document.documentID,
+                data: data,
+                currentUID: uid,
+                participantProfile: profileData
+            ))
+        }
+        return summaries
     }
+
 }

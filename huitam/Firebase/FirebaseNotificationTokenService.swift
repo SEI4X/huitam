@@ -25,12 +25,16 @@ final class FirebaseNotificationTokenService {
     }
 
     func storeCurrentMessagingTokenIfAvailable() async throws {
-        let token = try await currentMessagingToken()
+        guard let token = try await currentMessagingTokenIfReady() else {
+            return
+        }
         try await store(token: token)
     }
 
     func removeCurrentMessagingTokenIfAvailable() async throws {
-        let token = try await currentMessagingToken()
+        guard let token = try await currentMessagingTokenIfReady() else {
+            return
+        }
         try await remove(token: token)
     }
 
@@ -44,11 +48,19 @@ final class FirebaseNotificationTokenService {
             .delete()
     }
 
-    private func currentMessagingToken() async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
+    private func currentMessagingTokenIfReady() async throws -> String? {
+        guard Messaging.messaging().apnsToken != nil else {
+            return nil
+        }
+
+        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<String?, Error>) in
             Messaging.messaging().token { token, error in
                 if let error {
-                    continuation.resume(throwing: error)
+                    if Self.isMissingAPNSToken(error) {
+                        continuation.resume(returning: nil)
+                    } else {
+                        continuation.resume(throwing: error)
+                    }
                     return
                 }
 
@@ -60,5 +72,9 @@ final class FirebaseNotificationTokenService {
                 continuation.resume(returning: token)
             }
         }
+    }
+
+    nonisolated private static func isMissingAPNSToken(_ error: Error) -> Bool {
+        error.localizedDescription.localizedCaseInsensitiveContains("No APNS token specified")
     }
 }

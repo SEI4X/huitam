@@ -14,12 +14,13 @@ struct ProfileStatRowView: View {
                 .frame(width: 24)
 
             Text(title)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(PremiumTheme.textSecondary)
 
             Spacer()
 
             Text(value)
-                .foregroundStyle(.primary)
+                .foregroundStyle(PremiumTheme.textPrimary)
         }
+        .listRowBackground(PremiumTheme.surface)
     }
 }

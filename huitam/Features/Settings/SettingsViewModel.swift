@@ -6,6 +6,7 @@ import SwiftUI
 @Observable
 final class SettingsViewModel {
     private let settingsService: SettingsServicing
+    private let authService: AuthServicing
 
     private(set) var settings = AppSettings(
         nativeLanguage: .russian,
@@ -15,13 +16,16 @@ final class SettingsViewModel {
         notificationsEnabled: false
     )
     private(set) var errorMessage: String?
+    private(set) var isSigningOut = false
+    private(set) var isDeletingAccount = false
 
     var canUseStudyFeatures: Bool {
         settings.canUseStudyFeatures
     }
 
-    init(settingsService: SettingsServicing) {
+    init(settingsService: SettingsServicing, authService: AuthServicing) {
         self.settingsService = settingsService
+        self.authService = authService
     }
 
     func load() async {
@@ -69,6 +73,36 @@ final class SettingsViewModel {
             errorMessage = AppErrorMessage.userFacing(error)
         }
         await persist(updated)
+    }
+
+    func signOut() async {
+        isSigningOut = true
+        errorMessage = nil
+        defer { isSigningOut = false }
+
+        do {
+            try await authService.signOut()
+        } catch {
+            errorMessage = AppErrorMessage.userFacing(error)
+        }
+    }
+
+    func deleteAccount(reason: String) async {
+        let trimmedReason = reason.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmedReason.count >= 3 else {
+            errorMessage = "Please tell us why you are deleting your account."
+            return
+        }
+
+        isDeletingAccount = true
+        errorMessage = nil
+        defer { isDeletingAccount = false }
+
+        do {
+            try await authService.deleteAccount(reason: trimmedReason)
+        } catch {
+            errorMessage = AppErrorMessage.userFacing(error)
+        }
     }
 
     private func persist(_ updated: AppSettings) async {

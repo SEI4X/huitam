@@ -4,7 +4,7 @@ enum AppDefaults {
     static let settings = AppSettings(
         nativeLanguage: .russian,
         learningLanguage: .language(.english),
-        theme: .system,
+        theme: .dark,
         tint: .blue,
         notificationsEnabled: false
     )

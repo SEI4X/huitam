@@ -21,6 +21,7 @@ struct InvitedFriendView: View {
                 LabeledContent("They practice", value: viewModel.invite.inviterLearningLanguage.displayName)
                 LabeledContent("Your language", value: viewModel.invite.guestNativeLanguage.displayName)
             }
+            .listRowBackground(PremiumTheme.surface)
 
             Section("Your mode") {
                 Picker("Practice too", selection: Binding(
@@ -37,13 +38,16 @@ struct InvitedFriendView: View {
                 } label: {
                     Label("Continue Without Learning", systemImage: "message")
                 }
+                .foregroundStyle(.white)
 
                 Button {
                     Task { await viewModel.acceptAsLearner() }
                 } label: {
                     Label("Practice Too", systemImage: "arrow.left.arrow.right")
                 }
+                .foregroundStyle(.white)
             }
+            .listRowBackground(PremiumTheme.surface)
 
             if let createdChat = viewModel.createdChat {
                 Section("Ready") {
@@ -56,6 +60,7 @@ struct InvitedFriendView: View {
                         Label("Open Chat", systemImage: "message")
                     }
                 }
+                .listRowBackground(PremiumTheme.surface)
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
@@ -65,8 +70,10 @@ struct InvitedFriendView: View {
                         .font(.footnote)
                         .foregroundStyle(.red)
                 }
+                .listRowBackground(PremiumTheme.surface)
             }
         }
+        .premiumScrollBackground(glowPosition: .top, intensity: 0.66)
         .navigationTitle("Invitation")
         .navigationBarTitleDisplayMode(.inline)
         .disabled(viewModel.isAccepting)

@@ -18,6 +18,9 @@
 		3EB3D1182FA323E2009E302A /* FirebasePerformance in Frameworks */ = {isa = PBXBuildFile; productRef = 3EB3D1172FA323E2009E302A /* FirebasePerformance */; };
 		3EB3D11A2FA323E2009E302A /* FirebaseRemoteConfig in Frameworks */ = {isa = PBXBuildFile; productRef = 3EB3D1192FA323E2009E302A /* FirebaseRemoteConfig */; };
 		3EB3D11C2FA323E2009E302A /* FirebaseStorage in Frameworks */ = {isa = PBXBuildFile; productRef = 3EB3D11B2FA323E2009E302A /* FirebaseStorage */; };
+		3EB3D1202FA323E2009E302A /* FirebaseDatabase in Frameworks */ = {isa = PBXBuildFile; productRef = 3EB3D1212FA323E2009E302A /* FirebaseDatabase */; };
+		AC1DEFC7145400B222BC607C /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 58652F42499C144D922534C6 /* GoogleSignIn */; };
+		C37B0CC55F8C6269506A9FC6 /* huitamNotificationService.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = 79DAC81A23A334670FC3E4B2 /* huitamNotificationService.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -35,13 +38,45 @@
 			remoteGlobalIDString = 3ED5890C2FA23D8E00F21A59;
 			remoteInfo = huitam;
 		};
+		8044B0E6406AAFDB5E9158FD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 3ED589052FA23D8E00F21A59 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 75474CA96B00E447B9DFD690;
+			remoteInfo = huitamNotificationService;
+		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C1478BE56B35452AE48A4BCE /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C37B0CC55F8C6269506A9FC6 /* huitamNotificationService.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		3ED5890D2FA23D8E00F21A59 /* huitam.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = huitam.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3ED5891C2FA23D8F00F21A59 /* huitamTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = huitamTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		3ED589262FA23D8F00F21A59 /* huitamUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = huitamUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		79DAC81A23A334670FC3E4B2 /* huitamNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = huitamNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		ADA48C405758597FDF49C5EC /* Exceptions for "huitamNotificationService" folder in "huitamNotificationService" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 75474CA96B00E447B9DFD690 /* huitamNotificationService */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		3ED5890F2FA23D8E00F21A59 /* huitam */ = {
@@ -57,6 +92,14 @@
 		3ED589292FA23D8F00F21A59 /* huitamUITests */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = huitamUITests;
+			sourceTree = "<group>";
+		};
+		F494D62E3F6AD45CD4FA2106 /* huitamNotificationService */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				ADA48C405758597FDF49C5EC /* Exceptions for "huitamNotificationService" folder in "huitamNotificationService" target */,
+			);
+			path = huitamNotificationService;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -75,8 +118,10 @@
 				3EB3D10E2FA323E2009E302A /* FirebaseCore in Frameworks */,
 				3EB3D1082FA323E2009E302A /* FirebaseAnalytics in Frameworks */,
 				3EB3D11C2FA323E2009E302A /* FirebaseStorage in Frameworks */,
+				3EB3D1202FA323E2009E302A /* FirebaseDatabase in Frameworks */,
 				3EB3D1122FA323E2009E302A /* FirebaseFirestore in Frameworks */,
 				3EB3D11A2FA323E2009E302A /* FirebaseRemoteConfig in Frameworks */,
+				AC1DEFC7145400B222BC607C /* GoogleSignIn in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -94,6 +139,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		A5E961241C7EC48CF3D1AE61 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -101,6 +153,7 @@
 			isa = PBXGroup;
 			children = (
 				3ED5890F2FA23D8E00F21A59 /* huitam */,
+				F494D62E3F6AD45CD4FA2106 /* huitamNotificationService */,
 				3ED5891F2FA23D8F00F21A59 /* huitamTests */,
 				3ED589292FA23D8F00F21A59 /* huitamUITests */,
 				3ED5890E2FA23D8E00F21A59 /* Products */,
@@ -111,6 +164,7 @@
 			isa = PBXGroup;
 			children = (
 				3ED5890D2FA23D8E00F21A59 /* huitam.app */,
+				79DAC81A23A334670FC3E4B2 /* huitamNotificationService.appex */,
 				3ED5891C2FA23D8F00F21A59 /* huitamTests.xctest */,
 				3ED589262FA23D8F00F21A59 /* huitamUITests.xctest */,
 			);
@@ -127,10 +181,12 @@
 				3ED589092FA23D8E00F21A59 /* Sources */,
 				3ED5890A2FA23D8E00F21A59 /* Frameworks */,
 				3ED5890B2FA23D8E00F21A59 /* Resources */,
+				C1478BE56B35452AE48A4BCE /* Embed App Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				94C7AB302065ADD40F145735 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				3ED5890F2FA23D8E00F21A59 /* huitam */,
@@ -142,12 +198,14 @@
 				3EB3D10B2FA323E2009E302A /* FirebaseAuth */,
 				3EB3D10D2FA323E2009E302A /* FirebaseCore */,
 				3EB3D10F2FA323E2009E302A /* FirebaseCrashlytics */,
+				3EB3D1212FA323E2009E302A /* FirebaseDatabase */,
 				3EB3D1112FA323E2009E302A /* FirebaseFirestore */,
 				3EB3D1132FA323E2009E302A /* FirebaseFunctions */,
 				3EB3D1152FA323E2009E302A /* FirebaseMessaging */,
 				3EB3D1172FA323E2009E302A /* FirebasePerformance */,
 				3EB3D1192FA323E2009E302A /* FirebaseRemoteConfig */,
 				3EB3D11B2FA323E2009E302A /* FirebaseStorage */,
+				58652F42499C144D922534C6 /* GoogleSignIn */,
 			);
 			productName = huitam;
 			productReference = 3ED5890D2FA23D8E00F21A59 /* huitam.app */;
@@ -199,6 +257,28 @@
 			productReference = 3ED589262FA23D8F00F21A59 /* huitamUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
+		75474CA96B00E447B9DFD690 /* huitamNotificationService */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F850091E2188D3DCF9A1951D /* Build configuration list for PBXNativeTarget "huitamNotificationService" */;
+			buildPhases = (
+				7667AFD9E33BFFEE248EA3AF /* Sources */,
+				A5E961241C7EC48CF3D1AE61 /* Frameworks */,
+				03487E4B4BE55C720D72B07B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F494D62E3F6AD45CD4FA2106 /* huitamNotificationService */,
+			);
+			name = huitamNotificationService;
+			packageProductDependencies = (
+			);
+			productName = huitamNotificationService;
+			productReference = 79DAC81A23A334670FC3E4B2 /* huitamNotificationService.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -220,6 +300,9 @@
 						CreatedOnToolsVersion = 26.4;
 						TestTargetID = 3ED5890C2FA23D8E00F21A59;
 					};
+					75474CA96B00E447B9DFD690 = {
+						CreatedOnToolsVersion = 26.4;
+					};
 				};
 			};
 			buildConfigurationList = 3ED589082FA23D8E00F21A59 /* Build configuration list for PBXProject "huitam" */;
@@ -233,6 +316,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				3EB3D1062FA323E2009E302A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+				DD2047B3F8EF4CD282558B1B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 3ED5890E2FA23D8E00F21A59 /* Products */;
@@ -242,11 +326,19 @@
 				3ED5890C2FA23D8E00F21A59 /* huitam */,
 				3ED5891B2FA23D8F00F21A59 /* huitamTests */,
 				3ED589252FA23D8F00F21A59 /* huitamUITests */,
+				75474CA96B00E447B9DFD690 /* huitamNotificationService */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		03487E4B4BE55C720D72B07B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		3ED5890B2FA23D8E00F21A59 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -292,6 +384,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7667AFD9E33BFFEE248EA3AF /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -305,9 +404,44 @@
 			target = 3ED5890C2FA23D8E00F21A59 /* huitam */;
 			targetProxy = 3ED589272FA23D8F00F21A59 /* PBXContainerItemProxy */;
 		};
+		94C7AB302065ADD40F145735 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 75474CA96B00E447B9DFD690 /* huitamNotificationService */;
+			targetProxy = 8044B0E6406AAFDB5E9158FD /* PBXContainerItemProxy */;
+		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		313317035F6343FB6E188214 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = huitamNotificationService/huitamNotificationService.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G3M7ZA8M45;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = huitamNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lexmashkov.huitam.notificationService;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 		3ED5892E2FA23D8F00F21A59 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -573,6 +707,36 @@
 			};
 			name = Release;
 		};
+		DE5EF34EB94A22A59DCE9BF1 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				APPLICATION_EXTENSION_API_ONLY = YES;
+				CODE_SIGN_ENTITLEMENTS = huitamNotificationService/huitamNotificationService.entitlements;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = G3M7ZA8M45;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = huitamNotificationService/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.lexmashkov.huitam.notificationService;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -612,6 +776,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		F850091E2188D3DCF9A1951D /* Build configuration list for PBXNativeTarget "huitamNotificationService" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DE5EF34EB94A22A59DCE9BF1 /* Debug */,
+				313317035F6343FB6E188214 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
@@ -621,6 +794,14 @@
 			requirement = {
 				kind = upToNextMajorVersion;
 				minimumVersion = 12.12.1;
+			};
+		};
+		DD2047B3F8EF4CD282558B1B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 9.0.0;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */
@@ -680,6 +861,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 3EB3D1062FA323E2009E302A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
 			productName = FirebaseStorage;
+		};
+		3EB3D1212FA323E2009E302A /* FirebaseDatabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 3EB3D1062FA323E2009E302A /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseDatabase;
+		};
+		58652F42499C144D922534C6 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DD2047B3F8EF4CD282558B1B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
