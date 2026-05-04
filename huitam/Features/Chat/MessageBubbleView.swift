@@ -45,7 +45,7 @@ struct MessageBubbleView: View, Equatable {
 
                 messageContent
 
-                if message.direction == .incoming && message.originalText.isEmpty == false {
+                if shouldShowOriginalToggle {
                     Button {
                         withAnimation(AppMotion.bubbleReveal(reduceMotion: reduceMotion)) {
                             onOriginalTap()
@@ -160,6 +160,13 @@ struct MessageBubbleView: View, Equatable {
         .fixedSize()
     }
 
+    private var shouldShowOriginalToggle: Bool {
+        guard message.direction == .incoming else { return false }
+        let original = message.originalText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let translated = message.translatedText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return original.isEmpty == false && original != translated
+    }
+
     private var formattedTime: String {
         MessageTimeFormatter.shared.string(from: message.timestamp)
     }
@@ -172,6 +179,11 @@ struct MessageBubbleView: View, Equatable {
                 Image(systemName: "clock")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(metaColor)
+            case .translating:
+                Image(systemName: "sparkles")
+                    .font(.caption.weight(.bold))
+                    .symbolEffect(.pulse)
+                    .foregroundStyle(Color(red: 0.78, green: 0.86, blue: 1.0))
             case .sent:
                 Image(systemName: "checkmark")
                     .font(.caption.weight(.bold))
@@ -204,6 +216,8 @@ struct MessageBubbleView: View, Equatable {
         switch message.deliveryState {
         case .sending:
             "Sending, \(message.timestamp.formatted(date: .omitted, time: .shortened))"
+        case .translating:
+            "Translating, \(message.timestamp.formatted(date: .omitted, time: .shortened))"
         case .sent:
             "Sent, \(message.timestamp.formatted(date: .omitted, time: .shortened))"
         case .read:

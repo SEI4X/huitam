@@ -8,6 +8,8 @@ struct ChatView: View {
     @State private var shareTextItem: ActivityShareTextItem?
     @State private var didAnchorInitialMessages = false
     @State private var highlightedMessageID: UUID?
+    @State private var scrollOffsetPreserver = ChatScrollOffsetPreserver()
+    @State private var appearingEarlierMessageIDs: Set<UUID> = []
     private let bottomAnchorID = "chat-bottom-anchor"
 
     init(chat: ChatSummary, container: AppDependencyContainer) {
@@ -25,157 +27,153 @@ struct ChatView: View {
     var body: some View {
         GeometryReader { geometry in
             let maxBubbleWidth = min(geometry.size.width * 0.76, 360)
+            let inputBottomPadding = geometry.safeAreaInsets.bottom
+            let inputClearance = 104 + inputBottomPadding
+            let bottomAtmosphereHeight = 230 + inputBottomPadding
 
-            ScrollViewReader { proxy in
-                ScrollView {
-                    LazyVStack(spacing: 6) {
-                        if viewModel.hasMoreEarlierMessages && viewModel.messages.isEmpty == false {
-                            Button {
-                                Task {
-                                    await viewModel.loadEarlierMessages()
+            ZStack(alignment: .bottom) {
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVStack(spacing: 6) {
+                            if viewModel.hasMoreEarlierMessages && viewModel.messages.isEmpty == false {
+                                Button {
+                                    Task {
+                                        await loadEarlierMessages(preservingWith: proxy)
+                                    }
+                                } label: {
+                                    EarlierMessagesButtonLabel(isLoading: viewModel.isLoadingEarlierMessages)
                                 }
-                            } label: {
-                                if viewModel.isLoadingEarlierMessages {
-                                    ProgressView()
-                                        .controlSize(.small)
-                                        .tint(.white.opacity(0.72))
-                                } else {
-                                    Label("Earlier messages", systemImage: "chevron.up")
-                                        .font(.footnote.weight(.semibold))
-                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(PremiumTheme.textSecondary)
+                                .padding(.vertical, 8)
+                                .disabled(viewModel.isLoadingEarlierMessages)
                             }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(PremiumTheme.textSecondary)
-                            .padding(.vertical, 8)
-                            .disabled(viewModel.isLoadingEarlierMessages)
-                        }
 
-                        if viewModel.needsSubscription {
-                            LearnerSubscriptionBanner {
-                                Task {
-                                    await viewModel.startLearnerTrial()
+                            if viewModel.needsSubscription {
+                                LearnerSubscriptionBanner {
+                                    Task {
+                                        await viewModel.startLearnerTrial()
+                                    }
                                 }
+                                .padding(.horizontal)
+                                .padding(.bottom, 8)
                             }
-                            .padding(.horizontal)
-                            .padding(.bottom, 8)
-                        }
 
-                        ForEach(viewModel.messages) { message in
-                            MessageBubbleView(
-                                message: message,
-                                isOriginalVisible: viewModel.isOriginalVisible(for: message),
-                                isCorrectionVisible: viewModel.isCorrectionVisible(for: message),
-                                canUseStudyFeatures: viewModel.canUseStudyFeatures,
-                                maxBubbleWidth: maxBubbleWidth,
-                                onOriginalTap: {
-                                    viewModel.toggleOriginal(for: message)
-                                },
-                                onCorrectionToggle: {
-                                    viewModel.toggleCorrection(for: message)
-                                },
-                                onReplySwipe: {
-                                    withAnimation(AppMotion.quickStateChange(reduceMotion: reduceMotion)) {
-                                        viewModel.startReply(to: message)
+                            ForEach(viewModel.messages) { message in
+                                MessageBubbleView(
+                                    message: message,
+                                    isOriginalVisible: viewModel.isOriginalVisible(for: message),
+                                    isCorrectionVisible: viewModel.isCorrectionVisible(for: message),
+                                    canUseStudyFeatures: viewModel.canUseStudyFeatures,
+                                    maxBubbleWidth: maxBubbleWidth,
+                                    onOriginalTap: {
+                                        viewModel.toggleOriginal(for: message)
+                                    },
+                                    onCorrectionToggle: {
+                                        viewModel.toggleCorrection(for: message)
+                                    },
+                                    onReplySwipe: {
+                                        withAnimation(AppMotion.quickStateChange(reduceMotion: reduceMotion)) {
+                                            viewModel.startReply(to: message)
+                                        }
+                                    },
+                                    onAnalyzeTap: {
+                                        Task {
+                                            await viewModel.analyze(message)
+                                        }
+                                    },
+                                    onRetryTap: {
+                                        Task {
+                                            await viewModel.retry(message)
+                                        }
+                                    },
+                                    onDeleteTap: {
+                                        Task {
+                                            await viewModel.delete(message)
+                                        }
+                                    },
+                                    onShareTap: {
+                                        shareTextItem = ActivityShareTextItem(text: shareText(for: message))
+                                    },
+                                    onReplyPreviewTap: { reply in
+                                        Task {
+                                            await jumpToReply(reply, proxy: proxy)
+                                        }
                                     }
-                                },
-                                onAnalyzeTap: {
-                                    Task {
-                                        await viewModel.analyze(message)
-                                    }
-                                },
-                                onRetryTap: {
-                                    Task {
-                                        await viewModel.retry(message)
-                                    }
-                                },
-                                onDeleteTap: {
-                                    Task {
-                                        await viewModel.delete(message)
-                                    }
-                                },
-                                onShareTap: {
-                                    shareTextItem = ActivityShareTextItem(text: shareText(for: message))
-                                },
-                                onReplyPreviewTap: { reply in
-                                    Task {
-                                        await jumpToReply(reply, proxy: proxy)
-                                    }
-                                }
-                            )
-                            .equatable()
-                            .id(message.id)
-                            .transition(messageTransition(for: message))
-                            .scaleEffect(highlightedMessageID == message.id ? 1.035 : 1, anchor: message.direction == .outgoing ? .trailing : .leading)
-                            .brightness(highlightedMessageID == message.id ? 0.13 : 0)
-                            .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: highlightedMessageID)
-                        }
+                                )
+                                .equatable()
+                                .id(message.id)
+                                .transition(messageTransition(for: message))
+                                .opacity(appearingEarlierMessageIDs.contains(message.id) ? 0 : 1)
+                                .offset(y: appearingEarlierMessageIDs.contains(message.id) ? -10 : 0)
+                                .scaleEffect(bubbleScale(for: message), anchor: message.direction == .outgoing ? .trailing : .leading)
+                                .brightness(highlightedMessageID == message.id ? 0.13 : 0)
+                                .animation(AppMotion.quickStateChange(reduceMotion: reduceMotion), value: highlightedMessageID)
+                            }
 
-                        Color.clear
-                            .frame(height: 18)
-                            .id(bottomAnchorID)
+                            Color.clear
+                                .frame(height: 18)
+                                .id(bottomAnchorID)
+                        }
+                        .padding(.top, 14)
                     }
-                    .padding(.top, 14)
-                }
-                .defaultScrollAnchor(.bottom)
-                .background {
-                    PremiumScreenBackground(intensity: 0.72)
-                        .ignoresSafeArea()
-                }
-                .simultaneousGesture(
-                    TapGesture().onEnded {
-                        dismissKeyboard()
+                    .defaultScrollAnchor(.bottom)
+                    .background {
+                        PremiumScreenBackground(intensity: 0.72)
+                            .ignoresSafeArea()
                     }
-                )
-                .simultaneousGesture(
-                    DragGesture(minimumDistance: 18, coordinateSpace: .local)
-                        .onEnded { value in
-                            if shouldDismissKeyboard(after: value) {
-                                dismissKeyboard()
-                            }
+                    .overlay {
+                        ChatScrollViewResolver { scrollView in
+                            scrollOffsetPreserver.scrollView = scrollView
                         }
-                )
-                .safeAreaInset(edge: .bottom, spacing: 0) {
-                    ChatInputBarView(
-                        draft: Binding(
-                            get: { viewModel.draft },
-                            set: { viewModel.draft = $0 }
-                        ),
-                        replyTarget: viewModel.replyTarget,
-                        isSending: viewModel.isSending,
-                        canUseStudyFeatures: viewModel.canUseStudyFeatures,
-                        onSend: {
-                            Task {
-                                await viewModel.sendDraft()
-                            }
-                        },
-                        onAIHelp: {
-                            Task {
-                                await viewModel.suggestReply()
-                                withAnimation(AppMotion.sheetPresent(reduceMotion: reduceMotion)) {
-                                    isAIHelpPresented = true
-                                }
-                            }
-                        },
-                        onCancelReply: {
-                            viewModel.cancelReply()
+                        .allowsHitTesting(false)
+                        .frame(width: 0, height: 0)
+                    }
+                    .simultaneousGesture(
+                        TapGesture().onEnded {
+                            dismissKeyboard()
                         }
                     )
-                }
-                .onChange(of: viewModel.messages.last?.id) { _, newLastID in
-                    guard newLastID != nil else { return }
-                    Task { @MainActor in
-                        await settleBeforeBottomScroll()
-                        if didAnchorInitialMessages {
+                    .simultaneousGesture(
+                        DragGesture(minimumDistance: 18, coordinateSpace: .local)
+                            .onEnded { value in
+                                if shouldDismissKeyboard(after: value) {
+                                    dismissKeyboard()
+                                }
+                            }
+                    )
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        Color.clear
+                            .frame(height: inputClearance)
+                    }
+                    .onChange(of: viewModel.messages.last?.id) { _, newLastID in
+                        guard newLastID != nil else { return }
+                        Task { @MainActor in
+                            guard didAnchorInitialMessages else {
+                                didAnchorInitialMessages = true
+                                return
+                            }
+
+                            await settleBeforeBottomScroll()
                             withAnimation(AppMotion.messageInsert(reduceMotion: reduceMotion)) {
                                 proxy.scrollTo(bottomAnchorID, anchor: .bottom)
                             }
-                        } else {
-                            proxy.scrollTo(bottomAnchorID, anchor: .bottom)
-                            didAnchorInitialMessages = true
                         }
                     }
                 }
+
+                ChatBottomAtmosphere(height: bottomAtmosphereHeight)
+                    .frame(maxWidth: .infinity)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+                    .ignoresSafeArea(edges: .bottom)
+                    .zIndex(1)
+
+                inputBar
+                    .padding(.bottom, inputBottomPadding)
+                    .zIndex(2)
             }
+            .ignoresSafeArea(edges: .bottom)
         }
         .navigationTitle(viewModel.chat.participant.displayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -240,6 +238,34 @@ struct ChatView: View {
         }
     }
 
+    private var inputBar: some View {
+        ChatInputBarView(
+            draft: Binding(
+                get: { viewModel.draft },
+                set: { viewModel.draft = $0 }
+            ),
+            replyTarget: viewModel.replyTarget,
+            isSending: viewModel.isSending,
+            canUseStudyFeatures: viewModel.canUseStudyFeatures,
+            onSend: {
+                Task {
+                    await viewModel.sendDraft()
+                }
+            },
+            onAIHelp: {
+                Task {
+                    await viewModel.suggestReply()
+                    withAnimation(AppMotion.sheetPresent(reduceMotion: reduceMotion)) {
+                        isAIHelpPresented = true
+                    }
+                }
+            },
+            onCancelReply: {
+                viewModel.cancelReply()
+            }
+        )
+    }
+
     private func shareText(for message: ChatMessage) -> String {
         var components: [String] = []
         components.append(message.translatedText)
@@ -266,10 +292,57 @@ struct ChatView: View {
         )
     }
 
+    private func bubbleScale(for message: ChatMessage) -> CGFloat {
+        if highlightedMessageID == message.id {
+            return 1.035
+        }
+
+        if appearingEarlierMessageIDs.contains(message.id) {
+            return 0.985
+        }
+
+        return 1
+    }
+
     @MainActor
     private func settleBeforeBottomScroll() async {
         await Task.yield()
-        try? await Task.sleep(nanoseconds: 50_000_000)
+        await Task.yield()
+    }
+
+    @MainActor
+    private func loadEarlierMessages(preservingWith proxy: ScrollViewProxy) async {
+        let anchorMessageID = viewModel.messages.first?.id
+        let previousMessageIDs = Set(viewModel.messages.map(\.id))
+        let previousCount = viewModel.messages.count
+
+        scrollOffsetPreserver.capture()
+        await viewModel.loadEarlierMessages()
+
+        guard viewModel.messages.count > previousCount else {
+            scrollOffsetPreserver.clear()
+            return
+        }
+
+        let insertedMessageIDs = Set(viewModel.messages.map(\.id)).subtracting(previousMessageIDs)
+        if insertedMessageIDs.isEmpty == false {
+            appearingEarlierMessageIDs.formUnion(insertedMessageIDs)
+        }
+
+        let didRestoreOffset = await scrollOffsetPreserver.restoreAfterContentGrowth()
+        if didRestoreOffset == false, let anchorMessageID {
+            await Task.yield()
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(anchorMessageID, anchor: .top)
+            }
+        }
+
+        await Task.yield()
+        withAnimation(AppMotion.messageInsert(reduceMotion: reduceMotion)) {
+            appearingEarlierMessageIDs.subtract(insertedMessageIDs)
+        }
     }
 
     private func shouldDismissKeyboard(after value: DragGesture.Value) -> Bool {
@@ -306,6 +379,158 @@ struct ChatView: View {
                 highlightedMessageID = nil
             }
         }
+    }
+}
+
+private struct EarlierMessagesButtonLabel: View {
+    let isLoading: Bool
+
+    var body: some View {
+        ZStack {
+            Label("Earlier messages", systemImage: "chevron.up")
+                .font(.footnote.weight(.semibold))
+                .opacity(isLoading ? 0 : 1)
+
+            ProgressView()
+                .controlSize(.small)
+                .tint(.white.opacity(0.72))
+                .opacity(isLoading ? 1 : 0)
+        }
+        .frame(height: 24)
+    }
+}
+
+private struct ChatBottomAtmosphere: View {
+    let height: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(.ultraThinMaterial)
+            .overlay {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: Color.black.opacity(0.05), location: 0.40),
+                        .init(color: Color(red: 0.035, green: 0.038, blue: 0.052).opacity(0.62), location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .mask {
+                LinearGradient(
+                    stops: [
+                        .init(color: .clear, location: 0),
+                        .init(color: .black.opacity(0.16), location: 0.34),
+                        .init(color: .black.opacity(0.72), location: 0.72),
+                        .init(color: .black, location: 1)
+                    ],
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+            }
+            .frame(height: height)
+    }
+}
+
+@MainActor
+private final class ChatScrollOffsetPreserver {
+    weak var scrollView: UIScrollView?
+    private var snapshot: Snapshot?
+
+    func capture() {
+        guard let scrollView else { return }
+        scrollView.layoutIfNeeded()
+        snapshot = Snapshot(
+            contentHeight: scrollView.contentSize.height,
+            contentOffset: scrollView.contentOffset
+        )
+    }
+
+    func restoreAfterContentGrowth() async -> Bool {
+        guard let snapshot else { return false }
+        guard let scrollView else {
+            self.snapshot = nil
+            return false
+        }
+        defer { self.snapshot = nil }
+
+        await waitForContentGrowth(from: snapshot.contentHeight)
+
+        let insertedHeight = scrollView.contentSize.height - snapshot.contentHeight
+        guard insertedHeight > 0.5 else { return false }
+
+        var preservedOffset = snapshot.contentOffset
+        preservedOffset.y += insertedHeight
+        preservedOffset.y = min(max(preservedOffset.y, minimumOffsetY(for: scrollView)), maximumOffsetY(for: scrollView))
+
+        UIView.performWithoutAnimation {
+            scrollView.setContentOffset(preservedOffset, animated: false)
+            scrollView.layoutIfNeeded()
+        }
+
+        return true
+    }
+
+    func clear() {
+        snapshot = nil
+    }
+
+    private func waitForContentGrowth(from contentHeight: CGFloat) async {
+        for _ in 0..<8 {
+            scrollView?.layoutIfNeeded()
+            if let scrollView, scrollView.contentSize.height > contentHeight + 0.5 {
+                return
+            }
+            await Task.yield()
+        }
+    }
+
+    private func minimumOffsetY(for scrollView: UIScrollView) -> CGFloat {
+        -scrollView.adjustedContentInset.top
+    }
+
+    private func maximumOffsetY(for scrollView: UIScrollView) -> CGFloat {
+        max(
+            minimumOffsetY(for: scrollView),
+            scrollView.contentSize.height - scrollView.bounds.height + scrollView.adjustedContentInset.bottom
+        )
+    }
+
+    private struct Snapshot {
+        let contentHeight: CGFloat
+        let contentOffset: CGPoint
+    }
+}
+
+private struct ChatScrollViewResolver: UIViewRepresentable {
+    let onResolve: (UIScrollView) -> Void
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        view.backgroundColor = .clear
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        DispatchQueue.main.async {
+            guard let scrollView = uiView.firstSuperview(of: UIScrollView.self) else { return }
+            onResolve(scrollView)
+        }
+    }
+}
+
+private extension UIView {
+    func firstSuperview<T: UIView>(of type: T.Type) -> T? {
+        var view = superview
+        while let currentView = view {
+            if let typedView = currentView as? T {
+                return typedView
+            }
+            view = currentView.superview
+        }
+        return nil
     }
 }
 

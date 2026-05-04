@@ -47,7 +47,22 @@ final class FirebaseSettingsService: SettingsServicing {
 
     func updateSettings(_ settings: AppSettings) async throws -> AppSettings {
         let uid = try await authSession.currentUserID()
-        try await FirebaseAsync.setData(FirebaseDocumentMapper.data(from: settings), on: settingsReference(uid: uid))
+        let batch = db.batch()
+        batch.setData(
+            FirebaseDocumentMapper.data(from: settings),
+            forDocument: settingsReference(uid: uid),
+            merge: true
+        )
+        batch.setData(
+            [
+                "nativeLanguage": settings.nativeLanguage.rawValue,
+                "learningLanguage": FirebaseDocumentMapper.rawLearningLanguage(from: settings.learningLanguage) as Any,
+                "updatedAt": FieldValue.serverTimestamp()
+            ],
+            forDocument: db.collection("users").document(uid),
+            merge: true
+        )
+        try await FirebaseAsync.commit(batch)
         return settings
     }
 

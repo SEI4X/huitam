@@ -7,13 +7,17 @@ extension FirebaseDocumentMapper {
         documentID: String,
         data: [String: Any],
         currentUID: String,
-        participantProfile: [String: Any]
+        participantProfile: [String: Any],
+        currentProfile: [String: Any] = [:]
     ) throws -> ChatSummary {
         let participantUIDs = data["participantUIDs"] as? [String] ?? []
         let participantUID = participantUIDs.first { $0 != currentUID } ?? currentUID
-        let roles = data["roles"] as? [String: [String: Any]] ?? [:]
-        let currentRole = try role(from: roles[currentUID] ?? ["kind": "companion"])
-        let participantRole = try role(from: roles[participantUID] ?? ["kind": "companion"])
+        let currentNativeLanguage = appLanguage(
+            from: currentProfile["nativeLanguage"],
+            fallback: appLanguage(from: data["nativeLanguage"], fallback: .english)
+        )
+        let currentLearningLanguage = learningSelection(from: currentProfile["learningLanguage"] as? String)
+        let participantLearningLanguage = learningSelection(from: participantProfile["learningLanguage"] as? String)
 
         return ChatSummary(
             id: StableID.uuid(from: documentID),
@@ -22,10 +26,10 @@ extension FirebaseDocumentMapper {
             lastMessagePreview: previewText(from: data, currentUID: currentUID),
             timestamp: (data["updatedAt"] as? Timestamp)?.dateValue() ?? Date(),
             unreadCount: ((data["unreadCounts"] as? [String: Int])?[currentUID]) ?? 0,
-            nativeLanguage: appLanguage(from: data["nativeLanguage"], fallback: .english),
-            practiceLanguage: AppLanguage(rawValue: data["practiceLanguage"] as? String ?? ""),
-            currentUserRole: currentRole,
-            participantRole: participantRole
+            nativeLanguage: currentNativeLanguage,
+            practiceLanguage: currentLearningLanguage.language,
+            currentUserRole: chatRole(from: currentLearningLanguage),
+            participantRole: chatRole(from: participantLearningLanguage)
         )
     }
 
@@ -76,7 +80,7 @@ extension FirebaseDocumentMapper {
             originalText: data["originalText"] as? String ?? "",
             direction: senderUID == currentUID ? .outgoing : .incoming,
             deliveryState: MessageDeliveryState(rawValue: data["deliveryState"] as? String ?? "") ?? .sent,
-            errorMessage: nil,
+            errorMessage: data["deliveryError"] as? String ?? data["translationError"] as? String,
             correction: correctionData.flatMap(correction(from:)),
             reply: replyPreview(from: data)
         )
@@ -156,6 +160,13 @@ extension FirebaseDocumentMapper {
         return data["lastMessagePreview"] as? String ?? ""
     }
 
+    static func chatRole(from selection: LearningLanguageSelection) -> ChatParticipantRole {
+        if let language = selection.language {
+            return .learner(language)
+        }
+        return .companion
+    }
+
     private static func numericValue(_ value: Any?) -> Double? {
         switch value {
         case let value as Double:
@@ -174,6 +185,7 @@ private extension MessageDeliveryState {
     init?(rawValue: String) {
         switch rawValue {
         case "sending": self = .sending
+        case "translating": self = .translating
         case "sent": self = .sent
         case "delivered": self = .sent
         case "read": self = .read
@@ -185,6 +197,7 @@ private extension MessageDeliveryState {
     var rawValue: String {
         switch self {
         case .sending: "sending"
+        case .translating: "translating"
         case .sent: "sent"
         case .read: "read"
         case .failed: "failed"

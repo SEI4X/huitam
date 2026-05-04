@@ -46,6 +46,7 @@ enum MessageDirection: Hashable {
 
 enum MessageDeliveryState: Hashable {
     case sending
+    case translating
     case sent
     case read
     case failed

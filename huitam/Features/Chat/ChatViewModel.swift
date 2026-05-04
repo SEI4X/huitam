@@ -31,7 +31,7 @@ final class ChatViewModel {
     private(set) var replyTarget: MessageReplyPreview?
     var analysis: MessageAnalysis?
     var draft = ""
-    private(set) var canUseStudyFeatures = true
+    private(set) var canUseStudyFeatures = false
     var sendTimeout: Duration = .seconds(15)
     private var updatesTask: Task<Void, Never>?
     private var presenceTask: Task<Void, Never>?
@@ -63,13 +63,14 @@ final class ChatViewModel {
         self.settingsService = settingsService
         self.subscriptionService = subscriptionService
         self.presenceService = presenceService ?? NoopPresenceService()
+        refreshStudyFeatureAccess()
     }
 
     func load() async {
         let cachedMessages = Self.cachedMessagesByChatDocumentID[pendingMessagesKey] ?? []
         if cachedMessages.isEmpty == false {
             messages = initialVisibleMessages(from: cachedMessages)
-            hasMoreEarlierMessages = cachedMessages.count > Self.pageSize
+            hasMoreEarlierMessages = cachedMessages.count >= Self.pageSize
             isLoading = false
         } else {
             isLoading = true
@@ -222,8 +223,7 @@ final class ChatViewModel {
         replyTarget = nil
 
         do {
-            var message = try await sendWithTimeout(draft: trimmedDraft, localID: localMessageID, reply: reply)
-            message.deliveryState = .sent
+            let message = try await sendWithTimeout(draft: trimmedDraft, localID: localMessageID, reply: reply)
             if let index = messages.firstIndex(where: { $0.id == localMessageID }) {
                 messages[index] = message
             } else {
@@ -244,8 +244,10 @@ final class ChatViewModel {
 
     func retry(_ message: ChatMessage) async {
         guard message.direction == .outgoing, message.deliveryState == .failed else { return }
+        let retryMessageID = UUID()
 
         if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            messages[index].id = retryMessageID
             messages[index].deliveryState = .sending
             messages[index].errorMessage = nil
             storePending(messages[index])
@@ -253,21 +255,21 @@ final class ChatViewModel {
         }
 
         do {
-            var sentMessage = try await sendWithTimeout(
+            let sentMessage = try await sendWithTimeout(
                 draft: message.originalText.isEmpty ? message.translatedText : message.originalText,
-                localID: message.id,
+                localID: retryMessageID,
                 reply: message.reply
             )
-            sentMessage.deliveryState = .sent
-            if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            if let index = messages.firstIndex(where: { $0.id == retryMessageID }) {
                 messages[index] = sentMessage
             } else {
                 messages.append(sentMessage)
             }
             removePendingMessage(id: message.id)
+            removePendingMessage(id: retryMessageID)
             cacheMessages(messages)
         } catch {
-            if let index = messages.firstIndex(where: { $0.id == message.id }) {
+            if let index = messages.firstIndex(where: { $0.id == retryMessageID }) {
                 messages[index].deliveryState = .failed
                 messages[index].errorMessage = AppErrorMessage.userFacing(error)
                 storePending(messages[index])
@@ -418,7 +420,7 @@ final class ChatViewModel {
     }
 
     private func replaceMessages(with loadedMessages: [ChatMessage]) {
-        messages = mergePendingMessages(into: loadedMessages)
+        messages = mergePendingMessages(into: visibleMessages(from: loadedMessages))
         cacheMessages(messages)
         startMessageUpdates(after: loadedMessages.map(\.updatedAt).max())
     }
@@ -426,7 +428,7 @@ final class ChatViewModel {
     private func mergeServerMessages(_ serverMessages: [ChatMessage]) {
         guard serverMessages.isEmpty == false else { return }
         var mergedMessagesByID = Dictionary(uniqueKeysWithValues: messages.map { ($0.id, $0) })
-        for message in serverMessages {
+        for message in visibleMessages(from: serverMessages) {
             mergedMessagesByID[message.id] = message
             removePendingMessage(id: message.id)
         }
@@ -468,6 +470,12 @@ final class ChatViewModel {
         mergeServerMessages(cachedMessages)
         hasMoreEarlierMessages = cachedHasMessages(before: targetMessage)
         await Task.yield()
+    }
+
+    private func visibleMessages(from messages: [ChatMessage]) -> [ChatMessage] {
+        messages.filter { message in
+            message.direction == .outgoing || message.deliveryState != .translating
+        }
     }
 
     private func cacheMessages(_ messages: [ChatMessage], removingIDs: Set<UUID> = []) {
