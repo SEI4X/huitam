@@ -23,21 +23,7 @@ final class FirebaseChatService: ChatServicing {
                 .order(by: "updatedAt", descending: true)
         )
 
-        var summaries: [ChatSummary] = []
-        for document in snapshot.documents {
-            let data = document.data()
-            let participantUID = ((data["participantUIDs"] as? [String]) ?? []).first { $0 != uid } ?? uid
-            let profileSnapshot = try await FirebaseAsync.getDocument(db.collection("users").document(participantUID))
-            let profileData = profileSnapshot.data() ?? [:]
-            summaries.append(try FirebaseDocumentMapper.chatSummary(
-                documentID: document.documentID,
-                data: data,
-                currentUID: uid,
-                participantProfile: profileData
-            ))
-        }
-
-        return summaries
+        return try await chatSummaries(from: snapshot.documents, currentUID: uid)
     }
 
     func chatSummaryUpdates() -> AsyncStream<Result<[ChatSummary], Error>> {
@@ -48,21 +34,12 @@ final class FirebaseChatService: ChatServicing {
                     let query = db.collection("chats")
                         .whereField("participantUIDs", arrayContains: uid)
                         .order(by: "updatedAt", descending: true)
+                    var latestDocuments: [QueryDocumentSnapshot] = []
 
-                    let listener = query.addSnapshotListener { [weak self] snapshot, error in
-                        if let error {
-                            continuation.yield(.failure(error))
-                            return
-                        }
-
-                        guard let self, let documents = snapshot?.documents else {
-                            continuation.yield(.success([]))
-                            return
-                        }
-
+                    func emitSummaries() {
                         Task { @MainActor in
                             do {
-                                let summaries = try await self.chatSummaries(from: documents, currentUID: uid)
+                                let summaries = try await self.chatSummaries(from: latestDocuments, currentUID: uid)
                                 continuation.yield(.success(summaries))
                             } catch {
                                 continuation.yield(.failure(error))
@@ -70,8 +47,32 @@ final class FirebaseChatService: ChatServicing {
                         }
                     }
 
+                    let listener = query.addSnapshotListener { [weak self] snapshot, error in
+                        if let error {
+                            continuation.yield(.failure(error))
+                            return
+                        }
+
+                        guard self != nil, let documents = snapshot?.documents else {
+                            continuation.yield(.success([]))
+                            return
+                        }
+
+                        latestDocuments = documents
+                        emitSummaries()
+                    }
+
+                    let profileListener = db.collection("users").document(uid).addSnapshotListener { _, error in
+                        if let error {
+                            continuation.yield(.failure(error))
+                            return
+                        }
+                        emitSummaries()
+                    }
+
                     continuation.onTermination = { _ in
                         listener.remove()
+                        profileListener.remove()
                     }
                 } catch {
                     continuation.yield(.failure(error))
@@ -154,7 +155,8 @@ final class FirebaseChatService: ChatServicing {
             "originalText": draft,
             "translatedText": draft,
             "displayTexts": [uid: draft],
-            "deliveryState": "sent",
+            "visibleTo": [uid],
+            "deliveryState": "translating",
             "translationState": "pending",
             "createdAt": FieldValue.serverTimestamp(),
             "updatedAt": FieldValue.serverTimestamp()
@@ -191,7 +193,7 @@ final class FirebaseChatService: ChatServicing {
             translatedText: draft,
             originalText: draft,
             direction: .outgoing,
-            deliveryState: .sent,
+            deliveryState: .translating,
             reply: reply
         )
     }
@@ -290,6 +292,8 @@ final class FirebaseChatService: ChatServicing {
                 currentUID: uid,
                 chatID: chat.id
             )
+        }.filter { message in
+            message.direction == .outgoing || message.deliveryState != .translating
         }
     }
 
@@ -301,6 +305,8 @@ final class FirebaseChatService: ChatServicing {
         from documents: [QueryDocumentSnapshot],
         currentUID uid: String
     ) async throws -> [ChatSummary] {
+        let currentProfileSnapshot = try await FirebaseAsync.getDocument(db.collection("users").document(uid))
+        let currentProfileData = currentProfileSnapshot.data() ?? [:]
         var summaries: [ChatSummary] = []
         for document in documents {
             let data = document.data()
@@ -311,7 +317,8 @@ final class FirebaseChatService: ChatServicing {
                 documentID: document.documentID,
                 data: data,
                 currentUID: uid,
-                participantProfile: profileData
+                participantProfile: profileData,
+                currentProfile: currentProfileData
             ))
         }
         return summaries

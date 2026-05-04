@@ -2,8 +2,24 @@ import {TranslationServiceClient} from "@google-cloud/translate";
 import {GoogleGenAI} from "@google/genai";
 import * as crypto from "crypto";
 import * as admin from "firebase-admin";
-import {onDocumentCreated} from "firebase-functions/v2/firestore";
+import * as logger from "firebase-functions/logger";
+import {onDocumentCreated, onDocumentUpdated} from "firebase-functions/v2/firestore";
 import {HttpsError, onCall} from "firebase-functions/v2/https";
+import {
+  buildGeminiTranslationPrompt,
+  chooseTranslationPlan,
+  MESSAGE_TRANSLATION_PROMPT_VERSION,
+  messageDisplayLanguage,
+  restoreProtectedSegments,
+  translationCacheKey,
+  TranslationProvider
+} from "./translationRouter";
+import {
+  googleTranslateCharacterCount,
+  normalizeGeminiUsage,
+  usageAggregateKey,
+  usageDailyDocumentId
+} from "./usageTracker";
 
 admin.initializeApp();
 
@@ -15,6 +31,48 @@ const genAI = new GoogleGenAI({
   project: projectId,
   location: vertexLocation
 });
+
+type TranslationRuntimeConfig = {
+  enabled: boolean;
+  provider: TranslationProvider;
+  geminiModel: string;
+  promptVersion: string;
+};
+
+let cachedTranslationConfig: {value: TranslationRuntimeConfig; expiresAt: number} | undefined;
+
+type UsageLoggingConfig = {
+  enabled: boolean;
+  cloudLoggingEnabled: boolean;
+  firestoreAggregationEnabled: boolean;
+};
+
+let cachedUsageLoggingConfig: {value: UsageLoggingConfig; expiresAt: number} | undefined;
+
+type AIUsageContext = {
+  feature: string;
+  uid?: string;
+  chatId?: string;
+  messageId?: string;
+  senderUid?: string;
+  recipientUid?: string;
+  sourceLanguage?: string;
+  targetLanguage?: string;
+};
+
+type AIUsageRecord = AIUsageContext & {
+  provider: "gemini" | "google-translate";
+  model: string;
+  success: boolean;
+  latencyMs: number;
+  inputTokens?: number;
+  thinkingTokens?: number;
+  outputTokens?: number;
+  cachedTokens?: number;
+  totalTokens?: number;
+  translateCharacters?: number;
+  errorCode?: string;
+};
 
 function uidFromRequest(request: { auth?: { uid?: string } }): string {
   const uid = request.auth?.uid;
@@ -68,10 +126,209 @@ function languageCode(language: string | undefined): string | undefined {
   return codes[language] ?? language;
 }
 
-type RoleData = {
-  kind: "learner" | "companion";
-  learningLanguage?: string;
-};
+function remoteConfigValue(template: admin.remoteConfig.RemoteConfigTemplate, name: string): string | undefined {
+  const parameter = template.parameters[name];
+  const defaultValue = parameter?.defaultValue as {value?: string} | undefined;
+  const value = defaultValue?.value?.trim();
+  return value && value.length > 0 ? value : undefined;
+}
+
+async function messageTranslationConfig(): Promise<TranslationRuntimeConfig> {
+  const now = Date.now();
+  if (cachedTranslationConfig && cachedTranslationConfig.expiresAt > now) {
+    return cachedTranslationConfig.value;
+  }
+
+  const fallback: TranslationRuntimeConfig = {
+    enabled: true,
+    provider: "gemini",
+    geminiModel: "gemini-2.5-flash-lite",
+    promptVersion: MESSAGE_TRANSLATION_PROMPT_VERSION
+  };
+
+  try {
+    const template = await admin.remoteConfig().getTemplate();
+    const enabledValue = remoteConfigValue(template, "message_translation_enabled");
+    const providerValue =
+      remoteConfigValue(template, "message_translation_provider") ??
+      remoteConfigValue(template, "translation_provider");
+    const geminiModel =
+      remoteConfigValue(template, "message_translation_gemini_model") ??
+      fallback.geminiModel;
+    const promptVersion =
+      remoteConfigValue(template, "message_translation_prompt_version") ??
+      fallback.promptVersion;
+
+    const value: TranslationRuntimeConfig = {
+      enabled: enabledValue ? enabledValue !== "false" && enabledValue !== "0" : fallback.enabled,
+      provider: providerValue === "google" || providerValue === "google-translate" ? "google" : "gemini",
+      geminiModel,
+      promptVersion
+    };
+    cachedTranslationConfig = {
+      value,
+      expiresAt: now + 60_000
+    };
+    return value;
+  } catch (error) {
+    console.warn("Remote Config translation settings unavailable. Using fallback.", error);
+    cachedTranslationConfig = {
+      value: fallback,
+      expiresAt: now + 30_000
+    };
+    return fallback;
+  }
+}
+
+function remoteConfigBoolean(template: admin.remoteConfig.RemoteConfigTemplate, name: string, fallback: boolean): boolean {
+  const value = remoteConfigValue(template, name);
+  if (!value) return fallback;
+  return value !== "false" && value !== "0";
+}
+
+async function usageLoggingConfig(): Promise<UsageLoggingConfig> {
+  const now = Date.now();
+  if (cachedUsageLoggingConfig && cachedUsageLoggingConfig.expiresAt > now) {
+    return cachedUsageLoggingConfig.value;
+  }
+
+  const fallback: UsageLoggingConfig = {
+    enabled: true,
+    cloudLoggingEnabled: true,
+    firestoreAggregationEnabled: true
+  };
+
+  try {
+    const template = await admin.remoteConfig().getTemplate();
+    const value: UsageLoggingConfig = {
+      enabled: remoteConfigBoolean(template, "ai_usage_logging_enabled", fallback.enabled),
+      cloudLoggingEnabled: remoteConfigBoolean(template, "ai_usage_cloud_logging_enabled", fallback.cloudLoggingEnabled),
+      firestoreAggregationEnabled: remoteConfigBoolean(
+        template,
+        "ai_usage_firestore_aggregation_enabled",
+        fallback.firestoreAggregationEnabled
+      )
+    };
+    cachedUsageLoggingConfig = {
+      value,
+      expiresAt: now + 60_000
+    };
+    return value;
+  } catch (error) {
+    console.warn("Remote Config AI usage logging settings unavailable. Using fallback.", error);
+    cachedUsageLoggingConfig = {
+      value: fallback,
+      expiresAt: now + 30_000
+    };
+    return fallback;
+  }
+}
+
+function usageRecordPayload(record: AIUsageRecord): Record<string, unknown> {
+  return {
+    event: "huitam_ai_usage",
+    feature: record.feature,
+    provider: record.provider,
+    model: record.model,
+    uid: record.uid ?? null,
+    chatId: record.chatId ?? null,
+    messageId: record.messageId ?? null,
+    senderUid: record.senderUid ?? null,
+    recipientUid: record.recipientUid ?? null,
+    sourceLanguage: record.sourceLanguage ?? null,
+    targetLanguage: record.targetLanguage ?? null,
+    success: record.success,
+    latencyMs: record.latencyMs,
+    inputTokens: record.inputTokens ?? 0,
+    thinkingTokens: record.thinkingTokens ?? 0,
+    outputTokens: record.outputTokens ?? 0,
+    cachedTokens: record.cachedTokens ?? 0,
+    totalTokens: record.totalTokens ?? 0,
+    translateCharacters: record.translateCharacters ?? 0,
+    errorCode: record.errorCode ?? null,
+    createdAt: new Date().toISOString()
+  };
+}
+
+function usageAggregateUpdate(record: AIUsageRecord): Record<string, unknown> {
+  const providerKey = usageAggregateKey(record.provider);
+  const modelKey = usageAggregateKey(record.model);
+  const featureKey = usageAggregateKey(record.feature);
+  return {
+    date: usageDailyDocumentId(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    requests: admin.firestore.FieldValue.increment(1),
+    errors: admin.firestore.FieldValue.increment(record.success ? 0 : 1),
+    providers: {
+      [providerKey]: {
+        requests: admin.firestore.FieldValue.increment(1),
+        errors: admin.firestore.FieldValue.increment(record.success ? 0 : 1)
+      }
+    },
+    models: {
+      [modelKey]: {
+        requests: admin.firestore.FieldValue.increment(1)
+      }
+    },
+    features: {
+      [featureKey]: {
+        requests: admin.firestore.FieldValue.increment(1)
+      }
+    },
+    inputTokens: admin.firestore.FieldValue.increment(record.inputTokens ?? 0),
+    thinkingTokens: admin.firestore.FieldValue.increment(record.thinkingTokens ?? 0),
+    outputTokens: admin.firestore.FieldValue.increment(record.outputTokens ?? 0),
+    cachedTokens: admin.firestore.FieldValue.increment(record.cachedTokens ?? 0),
+    totalTokens: admin.firestore.FieldValue.increment(record.totalTokens ?? 0),
+    translateCharacters: admin.firestore.FieldValue.increment(record.translateCharacters ?? 0)
+  };
+}
+
+async function recordAIUsage(record: AIUsageRecord): Promise<void> {
+  const config = await usageLoggingConfig();
+  if (!config.enabled) return;
+
+  const payload = usageRecordPayload(record);
+
+  if (config.cloudLoggingEnabled) {
+    logger.info("huitam_ai_usage", payload);
+  }
+
+  if (!config.firestoreAggregationEnabled) return;
+
+  const date = usageDailyDocumentId();
+  const db = admin.firestore();
+  const writes: Promise<FirebaseFirestore.WriteResult>[] = [
+    db.collection("aiUsageDaily").doc(date).set(usageAggregateUpdate(record), {merge: true}),
+    db.collection("aiUsageDaily").doc(date).collection("features").doc(record.feature).set(
+      usageAggregateUpdate(record),
+      {merge: true}
+    ),
+    db.collection("aiUsageDaily").doc(date).collection("providers").doc(record.provider).set(
+      usageAggregateUpdate(record),
+      {merge: true}
+    )
+  ];
+
+  if (record.uid) {
+    writes.push(
+      db.collection("aiUsageDaily").doc(date).collection("users").doc(record.uid).set(
+        usageAggregateUpdate(record),
+        {merge: true}
+      )
+    );
+  }
+
+  await Promise.all(writes);
+}
+
+async function safeRecordAIUsage(record: AIUsageRecord): Promise<void> {
+  try {
+    await recordAIUsage(record);
+  } catch (error) {
+    console.warn("AI usage logging failed", error);
+  }
+}
 
 function normalizedNickname(data: unknown): string {
   const nickname = requiredString(data, "nickname").trim().toLowerCase();
@@ -79,42 +336,6 @@ function normalizedNickname(data: unknown): string {
     throw new HttpsError("invalid-argument", "Nickname is invalid.");
   }
   return nickname;
-}
-
-function roleFromData(data: unknown): RoleData {
-  if (!data || typeof data !== "object") {
-    throw new HttpsError("invalid-argument", "role is required.");
-  }
-
-  const record = data as Record<string, unknown>;
-  if (record.kind === "companion") {
-    return {kind: "companion"};
-  }
-
-  if (record.kind === "learner" && typeof record.learningLanguage === "string") {
-    return {
-      kind: "learner",
-      learningLanguage: record.learningLanguage
-    };
-  }
-
-  throw new HttpsError("invalid-argument", "role is invalid.");
-}
-
-function roleForProfile(profile: FirebaseFirestore.DocumentData | undefined): RoleData {
-  const learningLanguage = profile?.learningLanguage;
-  if (typeof learningLanguage === "string" && learningLanguage.length > 0) {
-    return {
-      kind: "learner",
-      learningLanguage
-    };
-  }
-
-  return {kind: "companion"};
-}
-
-function messageLanguage(role: RoleData | undefined, nativeLanguage: string | undefined): string {
-  return role?.learningLanguage ?? nativeLanguage ?? "english";
 }
 
 function profilePayload(uid: string, profile: FirebaseFirestore.DocumentData | undefined): Record<string, unknown> {
@@ -126,6 +347,20 @@ function profilePayload(uid: string, profile: FirebaseFirestore.DocumentData | u
     nativeLanguage: profile?.nativeLanguage ?? "english",
     learningLanguage: profile?.learningLanguage ?? null
   };
+}
+
+function profileLearningLanguage(profile: FirebaseFirestore.DocumentData | undefined): string | undefined {
+  const learningLanguage = profile?.learningLanguage;
+  return typeof learningLanguage === "string" && learningLanguage.trim().length > 0 ?
+    learningLanguage :
+    undefined;
+}
+
+function profileDisplayLanguage(profile: FirebaseFirestore.DocumentData | undefined): string {
+  return messageDisplayLanguage({
+    nativeLanguage: profile?.nativeLanguage,
+    learningLanguage: profileLearningLanguage(profile)
+  });
 }
 
 function timestampMillis(value: unknown): number {
@@ -141,9 +376,10 @@ async function chatSummaryPayload(
   participantUid: string,
   currentUid: string
 ): Promise<Record<string, unknown>> {
-  const [chatSnapshot, participantSnapshot] = await Promise.all([
+  const [chatSnapshot, participantSnapshot, currentSnapshot] = await Promise.all([
     chatRef.get(),
-    admin.firestore().collection("users").doc(participantUid).get()
+    admin.firestore().collection("users").doc(participantUid).get(),
+    admin.firestore().collection("users").doc(currentUid).get()
   ]);
 
   const chat = chatSnapshot.data();
@@ -151,20 +387,31 @@ async function chatSummaryPayload(
     throw new HttpsError("not-found", "Chat was not found.");
   }
 
-  const roles = (chat.roles ?? {}) as Record<string, RoleData>;
   const unreadCounts = (chat.unreadCounts ?? {}) as Record<string, number>;
+  const currentProfile = currentSnapshot.data();
+  const participantProfile = participantSnapshot.data();
+  const currentLearningLanguage = typeof currentProfile?.learningLanguage === "string" ?
+    currentProfile.learningLanguage :
+    undefined;
+  const participantLearningLanguage = typeof participantProfile?.learningLanguage === "string" ?
+    participantProfile.learningLanguage :
+    undefined;
   return {
     chat: {
       id: chatRef.id,
       participantUID: participantUid,
-      participant: profilePayload(participantUid, participantSnapshot.data()),
+      participant: profilePayload(participantUid, participantProfile),
       lastMessagePreview: chat.lastMessagePreview ?? "",
       updatedAtMillis: timestampMillis(chat.updatedAt),
       unreadCount: unreadCounts[currentUid] ?? 0,
-      nativeLanguage: chat.nativeLanguage ?? "english",
-      practiceLanguage: chat.practiceLanguage ?? null,
-      currentUserRole: roles[currentUid] ?? {kind: "companion"},
-      participantRole: roles[participantUid] ?? {kind: "companion"}
+      nativeLanguage: currentProfile?.nativeLanguage ?? "english",
+      practiceLanguage: currentLearningLanguage ?? null,
+      currentUserRole: currentLearningLanguage ?
+        {kind: "learner", learningLanguage: currentLearningLanguage} :
+        {kind: "companion"},
+      participantRole: participantLearningLanguage ?
+        {kind: "learner", learningLanguage: participantLearningLanguage} :
+        {kind: "companion"}
     }
   };
 }
@@ -172,7 +419,6 @@ async function chatSummaryPayload(
 export const openAccountChat = onCall({enforceAppCheck: false}, async (request) => {
   const uid = uidFromRequest(request);
   const nickname = normalizedNickname(request.data);
-  const currentRole = roleFromData((request.data as Record<string, unknown>).role);
   const db = admin.firestore();
 
   const usernameSnapshot = await db.collection("usernames").doc(nickname).get();
@@ -204,19 +450,12 @@ export const openAccountChat = onCall({enforceAppCheck: false}, async (request) 
   ]);
   const currentProfile = currentProfileSnapshot.data();
   const friendProfile = friendProfileSnapshot.data();
-  const friendRole = roleForProfile(friendProfile);
   const chatId = [uid, friendUid].sort().join("_");
   const chatRef = db.collection("chats").doc(chatId);
 
   try {
     await chatRef.create({
       participantUIDs: [friendUid, uid],
-      roles: {
-        [friendUid]: friendRole,
-        [uid]: currentRole
-      },
-      nativeLanguage: currentProfile?.nativeLanguage ?? "english",
-      practiceLanguage: currentRole.learningLanguage ?? null,
       lastMessagePreview: "",
       unreadCounts: {
         [friendUid]: 0,
@@ -235,20 +474,243 @@ export const openAccountChat = onCall({enforceAppCheck: false}, async (request) 
   return chatSummaryPayload(chatRef, friendUid, uid);
 });
 
-async function translateWithGoogle(text: string, sourceLanguage: string | undefined, targetLanguage: string): Promise<string> {
-  const [response] = await translationClient.translateText({
-    parent: `projects/${projectId}/locations/global`,
-    contents: [text],
-    mimeType: "text/plain",
-    sourceLanguageCode: languageCode(sourceLanguage),
-    targetLanguageCode: languageCode(targetLanguage)
-  });
+async function translateWithGoogle(
+  text: string,
+  sourceLanguage: string | undefined,
+  targetLanguage: string,
+  usageContext: AIUsageContext
+): Promise<string> {
+  const startedAt = Date.now();
+  const translateCharacters = googleTranslateCharacterCount(text);
+  try {
+    const [response] = await translationClient.translateText({
+      parent: `projects/${projectId}/locations/global`,
+      contents: [text],
+      mimeType: "text/plain",
+      sourceLanguageCode: languageCode(sourceLanguage),
+      targetLanguageCode: languageCode(targetLanguage)
+    });
 
-  const translatedText = response.translations?.[0]?.translatedText;
-  if (!translatedText) {
-    throw new HttpsError("internal", "Translation provider returned an empty response.");
+    const translatedText = response.translations?.[0]?.translatedText;
+    if (!translatedText) {
+      throw new HttpsError("internal", "Translation provider returned an empty response.");
+    }
+
+    await safeRecordAIUsage({
+      ...usageContext,
+      provider: "google-translate",
+      model: "google-nmt",
+      sourceLanguage,
+      targetLanguage,
+      success: true,
+      latencyMs: Date.now() - startedAt,
+      translateCharacters
+    });
+    return translatedText;
+  } catch (error) {
+    await safeRecordAIUsage({
+      ...usageContext,
+      provider: "google-translate",
+      model: "google-nmt",
+      sourceLanguage,
+      targetLanguage,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      translateCharacters,
+      errorCode: error instanceof HttpsError ? error.code : error instanceof Error ? error.name : "unknown"
+    });
+    throw error;
   }
-  return translatedText;
+}
+
+async function translateWithGemini(
+  text: string,
+  sourceLanguage: string | undefined,
+  targetLanguage: string,
+  model: string,
+  contextMessages: string[],
+  usageContext: AIUsageContext
+): Promise<string> {
+  const startedAt = Date.now();
+  try {
+    const result = await genAI.models.generateContent({
+      model,
+      contents: buildGeminiTranslationPrompt({
+        text,
+        sourceLanguage,
+        targetLanguage,
+        contextMessages
+      }),
+      config: {
+        temperature: 0,
+        maxOutputTokens: 512
+      }
+    });
+
+    const translatedText = result.text?.trim();
+    if (!translatedText) {
+      throw new HttpsError("internal", "Gemini returned an empty translation.");
+    }
+
+    const usage = normalizeGeminiUsage(result.usageMetadata);
+    await safeRecordAIUsage({
+      ...usageContext,
+      provider: "gemini",
+      model,
+      sourceLanguage,
+      targetLanguage,
+      success: true,
+      latencyMs: Date.now() - startedAt,
+      ...usage
+    });
+    return translatedText;
+  } catch (error) {
+    await safeRecordAIUsage({
+      ...usageContext,
+      provider: "gemini",
+      model,
+      sourceLanguage,
+      targetLanguage,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      errorCode: error instanceof HttpsError ? error.code : error instanceof Error ? error.name : "unknown"
+    });
+    throw error;
+  }
+}
+
+async function translatedTextFromCache(
+  text: string,
+  sourceLanguage: string | undefined,
+  targetLanguage: string,
+  runtimeConfig: TranslationRuntimeConfig,
+  contextMessages: string[],
+  usageContext: AIUsageContext
+): Promise<{translatedText: string; provider: TranslationProvider; cacheHit: boolean; cacheKey: string}> {
+  const provider = runtimeConfig.provider;
+  const model = provider === "google" ? "google-nmt" : runtimeConfig.geminiModel;
+  const cacheKey = translationCacheKey({
+    provider,
+    model,
+    promptVersion: provider === "gemini" ? runtimeConfig.promptVersion : undefined,
+    sourceLanguage,
+    targetLanguage,
+    text,
+    contextMessages: provider === "gemini" ? contextMessages : undefined
+  });
+  const cacheRef = admin.firestore().collection("translationCache").doc(cacheKey);
+  const cachedSnapshot = await cacheRef.get();
+  const cachedText = cachedSnapshot.data()?.translatedText;
+  if (typeof cachedText === "string" && cachedText.length > 0) {
+    return {
+      translatedText: cachedText,
+      provider,
+      cacheHit: true,
+      cacheKey
+    };
+  }
+
+  const translatedText = provider === "google" ?
+    await translateWithGoogle(text, sourceLanguage, targetLanguage, usageContext) :
+    await translateWithGemini(text, sourceLanguage, targetLanguage, runtimeConfig.geminiModel, contextMessages, usageContext);
+
+  await cacheRef.set({
+    translatedText,
+    provider,
+    model,
+    promptVersion: provider === "gemini" ? runtimeConfig.promptVersion : null,
+    contextMessages: provider === "gemini" ? contextMessages : [],
+    sourceLanguage: sourceLanguage ?? null,
+    targetLanguage,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    lastUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+    useCount: 1
+  }, {merge: true});
+
+  return {
+    translatedText,
+    provider,
+    cacheHit: false,
+    cacheKey
+  };
+}
+
+function originalMessageText(message: FirebaseFirestore.DocumentData): string | undefined {
+  const text = typeof message.originalText === "string" ? message.originalText.replace(/\s+/g, " ").trim() : "";
+  return text.length > 0 ? text : undefined;
+}
+
+function recentContextFromMessageDocuments(
+  documents: FirebaseFirestore.QueryDocumentSnapshot[],
+  currentIndex: number
+): string[] {
+  return documents
+    .slice(Math.max(0, currentIndex - 3), currentIndex)
+    .map((document) => originalMessageText(document.data()))
+    .filter((text): text is string => typeof text === "string");
+}
+
+async function recentChatContext(
+  chatRef: FirebaseFirestore.DocumentReference,
+  currentMessageId: string
+): Promise<string[]> {
+  const snapshot = await chatRef.collection("messages")
+    .orderBy("createdAt", "desc")
+    .limit(4)
+    .get();
+  return snapshot.docs
+    .filter((document) => document.id !== currentMessageId)
+    .slice(0, 3)
+    .reverse()
+    .map((document) => originalMessageText(document.data()))
+    .filter((text): text is string => typeof text === "string");
+}
+
+async function translationForRecipient(
+  originalText: string,
+  sourceLanguage: string,
+  targetLanguage: string,
+  runtimeConfig: TranslationRuntimeConfig,
+  contextMessages: string[],
+  usageContext: AIUsageContext
+): Promise<{
+  translatedText: string;
+  translationProvider: string;
+  translationState: string;
+  translationSkipReason?: string;
+}> {
+  const plan = runtimeConfig.enabled ?
+    chooseTranslationPlan({
+      text: originalText,
+      sourceLanguage,
+      targetLanguage,
+      configuredProvider: runtimeConfig.provider
+    }) :
+    {kind: "skip" as const, reason: "non-text" as const, translatedText: originalText};
+
+  if (plan.kind === "translate") {
+    const cached = await translatedTextFromCache(plan.text, sourceLanguage, targetLanguage, {
+      ...runtimeConfig,
+      provider: plan.provider
+    }, contextMessages, usageContext);
+    await admin.firestore().collection("translationCache").doc(cached.cacheKey).set({
+      lastUsedAt: admin.firestore.FieldValue.serverTimestamp(),
+      useCount: admin.firestore.FieldValue.increment(cached.cacheHit ? 1 : 0)
+    }, {merge: true});
+
+    return {
+      translatedText: restoreProtectedSegments(cached.translatedText, plan.protectedSegments),
+      translationProvider: cached.provider,
+      translationState: "translated"
+    };
+  }
+
+  return {
+    translatedText: plan.translatedText,
+    translationProvider: "none",
+    translationState: "skipped",
+    translationSkipReason: plan.reason
+  };
 }
 
 type PushAvatarMetadata = {
@@ -331,11 +793,47 @@ function notificationPreview(text: string): string {
   return trimmed.length > 120 ? `${trimmed.slice(0, 117)}...` : trimmed;
 }
 
+async function sendMessageNotification(
+  messageRef: FirebaseFirestore.DocumentReference,
+  recipientUid: string,
+  senderUid: string,
+  chatId: string,
+  previewText: string
+): Promise<void> {
+  const [senderProfileSnapshot, senderAuthUser] = await Promise.all([
+    admin.firestore().collection("users").doc(senderUid).get(),
+    admin.auth().getUser(senderUid).catch(() => undefined)
+  ]);
+  const senderProfile = senderProfileSnapshot.data();
+
+  const sent = await sendPushNotification(
+    recipientUid,
+    chatId,
+    notificationPreview(previewText),
+    {
+      senderName: senderProfile?.displayName ?? senderProfile?.nickname ?? "New message",
+      senderUID: senderUid,
+      avatarSymbol: avatarSymbolName(senderProfile?.avatarSystemImage),
+      avatarColorHex: avatarColorHex(senderUid),
+      avatarURL: typeof senderProfile?.avatarURL === "string" ? senderProfile.avatarURL :
+        typeof senderProfile?.photoURL === "string" ? senderProfile.photoURL :
+          senderAuthUser?.photoURL
+    }
+  );
+
+  await messageRef.set({
+    notificationState: sent > 0 ? "sent" : "no_tokens",
+    notificationSentAt: admin.firestore.FieldValue.serverTimestamp()
+  }, {merge: true});
+}
+
 export const notifyChatMessage = onDocumentCreated("chats/{chatId}/messages/{messageId}", async (event) => {
   const snapshot = event.data;
   if (!snapshot) return;
 
   const message = snapshot.data();
+  if (message.translationState === "pending") return;
+
   const senderUid = typeof message.senderUID === "string" ? message.senderUID : undefined;
   const originalText = typeof message.originalText === "string" ? message.originalText : "";
   if (!senderUid || originalText.trim().length === 0) return;
@@ -356,20 +854,15 @@ export const notifyChatMessage = onDocumentCreated("chats/{chatId}/messages/{mes
   if (!recipientUid) return;
 
   try {
-    const sent = await sendPushNotification(
-      recipientUid,
-      chatId,
-      notificationPreview(originalText),
-      {
-        senderName: senderProfile?.displayName ?? senderProfile?.nickname ?? "New message",
-        senderUID: senderUid,
-        avatarSymbol: avatarSymbolName(senderProfile?.avatarSystemImage),
-        avatarColorHex: avatarColorHex(senderUid),
-        avatarURL: typeof senderProfile?.avatarURL === "string" ? senderProfile.avatarURL :
-          typeof senderProfile?.photoURL === "string" ? senderProfile.photoURL :
-            senderAuthUser?.photoURL
-      }
-    );
+    const sent = await sendPushNotification(recipientUid, chatId, notificationPreview(originalText), {
+      senderName: senderProfile?.displayName ?? senderProfile?.nickname ?? "New message",
+      senderUID: senderUid,
+      avatarSymbol: avatarSymbolName(senderProfile?.avatarSystemImage),
+      avatarColorHex: avatarColorHex(senderUid),
+      avatarURL: typeof senderProfile?.avatarURL === "string" ? senderProfile.avatarURL :
+        typeof senderProfile?.photoURL === "string" ? senderProfile.photoURL :
+          senderAuthUser?.photoURL
+    });
     await snapshot.ref.set({
       notificationState: sent > 0 ? "sent" : "no_tokens",
       notificationSentAt: admin.firestore.FieldValue.serverTimestamp()
@@ -396,6 +889,8 @@ export const processChatMessage = onDocumentCreated("chats/{chatId}/messages/{me
   if (!senderUid || originalText.trim().length === 0) {
     await snapshot.ref.set({
       translationState: "failed",
+      deliveryState: "failed",
+      translationError: "Message text is empty.",
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, {merge: true});
     return;
@@ -412,8 +907,6 @@ export const processChatMessage = onDocumentCreated("chats/{chatId}/messages/{me
 
     const participantUids = Array.isArray(chat.participantUIDs) ? chat.participantUIDs as string[] : [];
     const recipientUid = participantUids.find((uid) => uid !== senderUid);
-    const roles = (chat.roles ?? {}) as Record<string, RoleData>;
-
     const [senderProfileSnapshot, recipientProfileSnapshot] = await Promise.all([
       db.collection("users").doc(senderUid).get(),
       recipientUid ? db.collection("users").doc(recipientUid).get() : Promise.resolve(undefined)
@@ -421,14 +914,23 @@ export const processChatMessage = onDocumentCreated("chats/{chatId}/messages/{me
 
     const senderProfile = senderProfileSnapshot.data();
     const recipientProfile = recipientProfileSnapshot?.data();
-    const sourceLanguage = messageLanguage(roles[senderUid], senderProfile?.nativeLanguage);
-    const targetLanguage = messageLanguage(
-      recipientUid ? roles[recipientUid] : undefined,
-      recipientProfile?.nativeLanguage ?? sourceLanguage
-    );
-    const translatedText = sourceLanguage === targetLanguage ?
-      originalText :
-      await translateWithGoogle(originalText, sourceLanguage, targetLanguage);
+    const sourceLanguage = profileDisplayLanguage(senderProfile);
+    const targetLanguage = recipientProfile ?
+      profileDisplayLanguage(recipientProfile) :
+      sourceLanguage;
+    const runtimeConfig = await messageTranslationConfig();
+    const contextMessages = await recentChatContext(chatRef, event.params.messageId);
+    const translation = await translationForRecipient(originalText, sourceLanguage, targetLanguage, runtimeConfig, contextMessages, {
+      feature: "message_translation",
+      uid: recipientUid ?? senderUid,
+      chatId,
+      messageId: event.params.messageId,
+      senderUid,
+      recipientUid,
+      sourceLanguage,
+      targetLanguage
+    });
+    const translatedText = translation.translatedText;
 
     const displayTexts: Record<string, string> = {
       [senderUid]: originalText
@@ -448,7 +950,13 @@ export const processChatMessage = onDocumentCreated("chats/{chatId}/messages/{me
     batch.set(snapshot.ref, {
       translatedText,
       displayTexts,
-      translationState: "translated",
+      sourceLanguage,
+      displayLanguages: recipientUid ? {[senderUid]: sourceLanguage, [recipientUid]: targetLanguage} : {[senderUid]: sourceLanguage},
+      translationState: translation.translationState,
+      translationProvider: translation.translationProvider,
+      ...(translation.translationSkipReason ? {translationSkipReason: translation.translationSkipReason} : {}),
+      visibleTo: recipientUid ? [senderUid, recipientUid] : [senderUid],
+      deliveryState: "sent",
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, {merge: true});
     batch.set(chatRef, {
@@ -458,34 +966,147 @@ export const processChatMessage = onDocumentCreated("chats/{chatId}/messages/{me
     }, {merge: true});
     await batch.commit();
 
+    if (recipientUid) {
+      try {
+        await sendMessageNotification(snapshot.ref, recipientUid, senderUid, chatId, translatedText);
+      } catch (notificationError) {
+        console.error("processChatMessage notification failed", notificationError);
+        await snapshot.ref.set({
+          notificationState: "failed",
+          notificationError: notificationError instanceof Error ? notificationError.message : "Unknown notification error",
+          notificationUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, {merge: true});
+      }
+    }
+
   } catch (error) {
     console.error("processChatMessage failed", error);
     await snapshot.ref.set({
       translationState: "failed",
+      deliveryState: "failed",
+      translationError: error instanceof Error ? error.message : "Translation failed.",
+      visibleTo: senderUid ? [senderUid] : [],
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, {merge: true});
   }
 });
 
-async function generateWithGemini(prompt: string): Promise<string> {
-  const result = await genAI.models.generateContent({
-    model: "gemini-2.0-flash",
-    contents: prompt,
-    config: {
-      temperature: 0.2,
-      maxOutputTokens: 512
-    }
-  });
+export const refreshUserMessageTranslations = onDocumentUpdated("users/{uid}", async (event) => {
+  const before = event.data?.before.data();
+  const after = event.data?.after.data();
+  if (!before || !after) return;
 
-  const text = result.text?.trim();
-  if (!text) {
-    throw new HttpsError("internal", "Gemini returned an empty response.");
+  const beforeLanguage = profileDisplayLanguage(before);
+  const afterLanguage = profileDisplayLanguage(after);
+  if (beforeLanguage === afterLanguage) return;
+
+  const uid = event.params.uid;
+  const db = admin.firestore();
+  const runtimeConfig = await messageTranslationConfig();
+  const chatsSnapshot = await db.collection("chats")
+    .where("participantUIDs", "array-contains", uid)
+    .get();
+
+  for (const chatDocument of chatsSnapshot.docs) {
+    const chat = chatDocument.data();
+    const participantUids = Array.isArray(chat.participantUIDs) ? chat.participantUIDs as string[] : [];
+    const otherUid = participantUids.find((participantUid) => participantUid !== uid);
+    if (!otherUid) continue;
+
+    const otherProfileSnapshot = await db.collection("users").doc(otherUid).get();
+    const otherProfile = otherProfileSnapshot.data();
+    const sourceLanguage = profileDisplayLanguage(otherProfile);
+    const messagesSnapshot = await chatDocument.ref.collection("messages")
+      .orderBy("createdAt", "desc")
+      .limit(200)
+      .get();
+
+    const messageDocuments = [...messagesSnapshot.docs].reverse();
+    let batch = db.batch();
+    let batchCount = 0;
+    for (let messageIndex = 0; messageIndex < messageDocuments.length; messageIndex += 1) {
+      const messageDocument = messageDocuments[messageIndex];
+      const message = messageDocument.data();
+      if (message.senderUID !== otherUid) continue;
+      const originalText = typeof message.originalText === "string" ? message.originalText : "";
+      if (!originalText.trim()) continue;
+      const contextMessages = recentContextFromMessageDocuments(messageDocuments, messageIndex);
+
+      const translation = await translationForRecipient(originalText, sourceLanguage, afterLanguage, runtimeConfig, contextMessages, {
+        feature: "message_translation_refresh",
+        uid,
+        chatId: chatDocument.id,
+        messageId: messageDocument.id,
+        senderUid: otherUid,
+        recipientUid: uid,
+        sourceLanguage,
+        targetLanguage: afterLanguage
+      });
+      batch.set(messageDocument.ref, {
+        [`displayTexts.${uid}`]: translation.translatedText,
+        [`displayLanguages.${uid}`]: afterLanguage,
+        [`translationProviders.${uid}`]: translation.translationProvider,
+        [`translationStates.${uid}`]: translation.translationState,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, {merge: true});
+      batchCount += 1;
+
+      if (batchCount === 450) {
+        await batch.commit();
+        batch = db.batch();
+        batchCount = 0;
+      }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
+    }
   }
-  return text;
+});
+
+async function generateWithGemini(prompt: string, usageContext: AIUsageContext): Promise<string> {
+  const model = "gemini-2.0-flash";
+  const startedAt = Date.now();
+  try {
+    const result = await genAI.models.generateContent({
+      model,
+      contents: prompt,
+      config: {
+        temperature: 0.2,
+        maxOutputTokens: 512
+      }
+    });
+
+    const text = result.text?.trim();
+    if (!text) {
+      throw new HttpsError("internal", "Gemini returned an empty response.");
+    }
+
+    const usage = normalizeGeminiUsage(result.usageMetadata);
+    await safeRecordAIUsage({
+      ...usageContext,
+      provider: "gemini",
+      model,
+      success: true,
+      latencyMs: Date.now() - startedAt,
+      ...usage
+    });
+    return text;
+  } catch (error) {
+    await safeRecordAIUsage({
+      ...usageContext,
+      provider: "gemini",
+      model,
+      success: false,
+      latencyMs: Date.now() - startedAt,
+      errorCode: error instanceof HttpsError ? error.code : error instanceof Error ? error.name : "unknown"
+    });
+    throw error;
+  }
 }
 
 export const translateText = onCall({enforceAppCheck: true}, async (request) => {
-  uidFromRequest(request);
+  const uid = uidFromRequest(request);
   const text = requiredString(request.data, "text");
   assertShortText(text);
   const sourceLanguage = optionalString(request.data, "sourceLanguage");
@@ -494,12 +1115,23 @@ export const translateText = onCall({enforceAppCheck: true}, async (request) => 
 
   if (route === "gemini") {
     const translatedText = await generateWithGemini(
-      `Translate the message into ${targetLanguage}. Return only the translation.\n\nMessage:\n${text}`
+      `Translate the message into ${targetLanguage}. Return only the translation.\n\nMessage:\n${text}`,
+      {
+        feature: "manual_translate",
+        uid,
+        sourceLanguage,
+        targetLanguage
+      }
     );
     return {translatedText, targetLanguage, provider: "gemini"};
   }
 
-  const translatedText = await translateWithGoogle(text, sourceLanguage, targetLanguage);
+  const translatedText = await translateWithGoogle(text, sourceLanguage, targetLanguage, {
+    feature: "manual_translate",
+    uid,
+    sourceLanguage,
+    targetLanguage
+  });
   return {
     translatedText,
     targetLanguage,
@@ -508,12 +1140,17 @@ export const translateText = onCall({enforceAppCheck: true}, async (request) => 
 });
 
 export const analyzeMessage = onCall({enforceAppCheck: true}, async (request) => {
-  uidFromRequest(request);
+  const uid = uidFromRequest(request);
   const text = requiredString(request.data, "text");
   assertShortText(text);
   const language = optionalString(request.data, "language") ?? "english";
   const result = await generateWithGemini(
-    `Analyze this ${language} message for a language learner. Return compact JSON with keys tokens, phraseSuggestions, grammarNotes. tokens must be objects with text, translation, partOfSpeech. grammarNotes must be objects with title and explanation. Message: ${text}`
+    `Analyze this ${language} message for a language learner. Return compact JSON with keys tokens, phraseSuggestions, grammarNotes. tokens must be objects with text, translation, partOfSpeech. grammarNotes must be objects with title and explanation. Message: ${text}`,
+    {
+      feature: "analyze_message",
+      uid,
+      targetLanguage: language
+    }
   );
 
   try {
@@ -528,7 +1165,7 @@ export const analyzeMessage = onCall({enforceAppCheck: true}, async (request) =>
 });
 
 export const suggestReply = onCall({enforceAppCheck: true}, async (request) => {
-  uidFromRequest(request);
+  const uid = uidFromRequest(request);
   const targetLanguage = requiredString(request.data, "targetLanguage");
   const messagesValue = (request.data as Record<string, unknown>)?.messages;
   const messages: unknown[] = Array.isArray(messagesValue) ? messagesValue : [];
@@ -542,29 +1179,44 @@ export const suggestReply = onCall({enforceAppCheck: true}, async (request) => {
     .filter(Boolean)
     .join("\n");
   const suggestion = await generateWithGemini(
-    `Write one natural short reply in ${targetLanguage}. Return only the reply.\n\nChat:\n${history}`
+    `Write one natural short reply in ${targetLanguage}. Return only the reply.\n\nChat:\n${history}`,
+    {
+      feature: "suggest_reply",
+      uid,
+      targetLanguage
+    }
   );
   return {suggestion};
 });
 
 export const correctDraft = onCall({enforceAppCheck: true}, async (request) => {
-  uidFromRequest(request);
+  const uid = uidFromRequest(request);
   const text = requiredString(request.data, "text");
   assertShortText(text);
   const targetLanguage = requiredString(request.data, "targetLanguage");
   const correctedText = await generateWithGemini(
-    `Correct this ${targetLanguage} chat message. Preserve meaning and tone. Return only corrected text.\n\n${text}`
+    `Correct this ${targetLanguage} chat message. Preserve meaning and tone. Return only corrected text.\n\n${text}`,
+    {
+      feature: "correct_draft",
+      uid,
+      targetLanguage
+    }
   );
   return {correctedText};
 });
 
 export const explainText = onCall({enforceAppCheck: true}, async (request) => {
-  uidFromRequest(request);
+  const uid = uidFromRequest(request);
   const text = requiredString(request.data, "text");
   assertShortText(text);
   const language = requiredString(request.data, "language");
   const explanation = await generateWithGemini(
-    `Explain this ${language} phrase for a language learner. Be concise and practical.\n\n${text}`
+    `Explain this ${language} phrase for a language learner. Be concise and practical.\n\n${text}`,
+    {
+      feature: "explain_text",
+      uid,
+      targetLanguage: language
+    }
   );
   return {explanation};
 });

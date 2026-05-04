@@ -31,8 +31,24 @@ final class ChatsListViewModelTests: XCTestCase {
         let viewModel = ChatsListViewModel(chatService: service)
 
         await viewModel.startObservingChats()
+        try await Task.sleep(nanoseconds: 50_000_000)
 
         XCTAssertEqual(viewModel.chats.map(\.participant.displayName), ["Camille"])
+        XCTAssertFalse(viewModel.isLoading)
+    }
+
+    func testChatObservationContinuesAfterStartCallReturns() async throws {
+        let service = RecordingChatService()
+        service.chatUpdates = []
+        let viewModel = ChatsListViewModel(chatService: service)
+
+        await viewModel.startObservingChats()
+        var updatedChat = MockAppData.chats[0]
+        updatedChat.lastMessagePreview = "Fresh message"
+        service.chatUpdatesContinuation?.yield(.success([updatedChat]))
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        XCTAssertEqual(viewModel.chats.first?.lastMessagePreview, "Fresh message")
         XCTAssertFalse(viewModel.isLoading)
     }
 

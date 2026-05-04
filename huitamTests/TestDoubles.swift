@@ -18,6 +18,8 @@ final class RecordingChatService: ChatServicing {
     var messagesByChatID = MockAppData.messagesByChatID
     var sendDelayNanoseconds: UInt64 = 0
     var sendError: Error?
+    var sentDeliveryState: MessageDeliveryState = .sent
+    var chatUpdatesContinuation: AsyncStream<Result<[ChatSummary], Error>>.Continuation?
 
     func loadChatSummaries() async throws -> [ChatSummary] {
         chats
@@ -25,11 +27,14 @@ final class RecordingChatService: ChatServicing {
 
     func chatSummaryUpdates() -> AsyncStream<Result<[ChatSummary], Error>> {
         AsyncStream { continuation in
+            chatUpdatesContinuation = continuation
             let updates = chatUpdates.isEmpty ? [chats] : chatUpdates
             for update in updates {
                 continuation.yield(.success(update))
             }
-            continuation.finish()
+            if chatUpdates.isEmpty == false {
+                continuation.finish()
+            }
         }
     }
 
@@ -75,7 +80,7 @@ final class RecordingChatService: ChatServicing {
             translatedText: draft,
             originalText: "[friend language] \(draft)",
             direction: .outgoing,
-            deliveryState: .sent,
+            deliveryState: sentDeliveryState,
             reply: reply
         )
         messagesByChatID[chat.id, default: []].append(message)

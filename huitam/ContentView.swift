@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Environment(\.appDependencies) private var dependencies
+    @Environment(\.scenePhase) private var scenePhase
     @State private var authGateViewModel: AuthGateViewModel?
     @State private var onboardingViewModel: OnboardingViewModel?
     @State private var pendingInviteID: String?
@@ -30,8 +31,6 @@ struct ContentView: View {
                 return
             }
 
-            await dependencies.presenceService.startTrackingCurrentUser()
-
             if onboardingViewModel == nil {
                 let viewModel = OnboardingViewModel(
                     onboardingService: dependencies.onboardingService,
@@ -41,6 +40,14 @@ struct ContentView: View {
                 onboardingViewModel = viewModel
                 await viewModel.load()
             }
+        }
+        .task(id: presenceTrackingKey) {
+            guard authGateViewModel?.isAuthenticated == true, scenePhase == .active else {
+                dependencies.presenceService.stopTrackingCurrentUser()
+                return
+            }
+
+            await dependencies.presenceService.startTrackingCurrentUser()
         }
         .onOpenURL { url in
             guard let inviteID = InviteDeepLinkParser.inviteID(from: url) else {
@@ -77,6 +84,10 @@ struct ContentView: View {
         guard let onboardingViewModel else { return "launch" }
         if onboardingViewModel.isLoading { return "launch" }
         return onboardingViewModel.state.hasCompletedOnboarding ? "chats" : "onboarding"
+    }
+
+    private var presenceTrackingKey: String {
+        "\(authGateViewModel?.userID ?? "signed-out")-\(scenePhase)"
     }
 
     @ViewBuilder

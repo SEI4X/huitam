@@ -53,6 +53,38 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertNotNil(services.chat.messageUpdateAfterDates.last ?? nil)
     }
 
+    func testReopeningChatWithFullCachedPageCanLoadEarlierMessages() async throws {
+        let services = TestServices()
+        let allMessages = makeMessages(count: 30, chatID: MockAppData.chats[0].id)
+        services.chat.messagesByChatID[MockAppData.chats[0].id] = allMessages
+        let firstViewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+        await firstViewModel.load()
+
+        let secondViewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+        await secondViewModel.load()
+
+        XCTAssertEqual(secondViewModel.messages.count, 15)
+
+        await secondViewModel.loadEarlierMessages()
+
+        XCTAssertEqual(services.chat.earlierMessageLoadRequests.count, 1)
+        XCTAssertEqual(secondViewModel.messages.map(\.id), allMessages.map(\.id))
+    }
+
     func testLoadEarlierMessagesRequestsOnePageBeforeOldestLoadedMessage() async throws {
         let services = TestServices()
         services.chat.messagesByChatID[MockAppData.chats[0].id] = makeMessages(count: 25, chatID: MockAppData.chats[0].id)
@@ -73,6 +105,27 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertEqual(services.chat.earlierMessageLoadRequests.first?.before, oldestRecentMessage.id)
         XCTAssertEqual(services.chat.earlierMessageLoadRequests.first?.limit, 15)
         XCTAssertEqual(viewModel.messages.count, 25)
+    }
+
+    func testLoadEarlierMessagesPrependsEarlierPageAndKeepsRecentMessages() async throws {
+        let services = TestServices()
+        let allMessages = makeMessages(count: 30, chatID: MockAppData.chats[0].id)
+        services.chat.messagesByChatID[MockAppData.chats[0].id] = allMessages
+        let viewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+        await viewModel.load()
+        let recentMessageIDs = viewModel.messages.map(\.id)
+
+        await viewModel.loadEarlierMessages()
+
+        XCTAssertEqual(viewModel.messages.suffix(recentMessageIDs.count).map(\.id), recentMessageIDs)
+        XCTAssertEqual(viewModel.messages.map(\.id), allMessages.map(\.id))
     }
 
     func testSendDraftTranslatesAndClearsDraft() async throws {
@@ -139,6 +192,51 @@ final class ChatViewModelTests: XCTestCase {
 
         XCTAssertEqual(viewModel.messages.last?.deliveryState, .sent)
         XCTAssertEqual(services.chat.sentDrafts, ["Sending should feel instant"])
+    }
+
+    func testSendDraftShowsTranslatingAfterMessageIsAccepted() async throws {
+        let services = TestServices()
+        services.chat.sentDeliveryState = .translating
+        let viewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+        viewModel.draft = "Translate before delivery"
+
+        await viewModel.sendDraft()
+
+        XCTAssertEqual(viewModel.messages.last?.deliveryState, .translating)
+    }
+
+    func testIncomingPendingTranslationIsHiddenFromMessageList() async throws {
+        let services = TestServices()
+        let hiddenMessage = ChatMessage(
+            id: UUID(),
+            chatID: MockAppData.chats[0].id,
+            senderID: MockAppData.camille.id,
+            timestamp: Date(),
+            translatedText: "Not ready",
+            originalText: "Pas encore",
+            direction: .incoming,
+            deliveryState: .translating
+        )
+        services.chat.messagesByChatID[MockAppData.chats[0].id] = [hiddenMessage]
+        let viewModel = ChatViewModel(
+            chat: MockAppData.chats[0],
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
+
+        await viewModel.load()
+
+        XCTAssertTrue(viewModel.messages.isEmpty)
     }
 
     func testSendDraftMarksMessageFailedWhenSendFails() async throws {
@@ -320,6 +418,23 @@ final class ChatViewModelTests: XCTestCase {
         )
 
         await viewModel.loadSettings()
+
+        XCTAssertFalse(viewModel.canUseStudyFeatures)
+    }
+
+    func testCompanionStartsWithStudyFeaturesHiddenBeforeSettingsLoad() async throws {
+        let services = TestServices()
+        var chat = MockAppData.chats[0]
+        chat.currentUserRole = .companion
+
+        let viewModel = ChatViewModel(
+            chat: chat,
+            chatService: services.chat,
+            studyCardService: services.cards,
+            aiAssistService: services.ai,
+            settingsService: services.settings,
+            subscriptionService: services.subscription
+        )
 
         XCTAssertFalse(viewModel.canUseStudyFeatures)
     }

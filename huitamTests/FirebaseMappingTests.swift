@@ -111,9 +111,39 @@ final class FirebaseMappingTests: XCTestCase {
                 "nativeLanguage": "french"
             ],
             currentUID: "user-b",
-            participantProfile: [:]
+            participantProfile: [:],
+            currentProfile: [:]
         )
 
         XCTAssertEqual(summary.lastMessagePreview, "A bientot")
+    }
+
+    func testChatSummaryMapperUsesUserProfilesForLanguagesAndRoles() throws {
+        let summary = try FirebaseDocumentMapper.chatSummary(
+            documentID: "chat-2",
+            data: [
+                "participantUIDs": ["user-a", "user-b"],
+                "roles": [
+                    "user-a": FirebaseDocumentMapper.data(from: ChatParticipantRole.learner(.english)),
+                    "user-b": FirebaseDocumentMapper.data(from: ChatParticipantRole.learner(.french))
+                ],
+                "nativeLanguage": "german",
+                "practiceLanguage": "french"
+            ],
+            currentUID: "user-b",
+            participantProfile: [
+                "nativeLanguage": "spanish",
+                "learningLanguage": "portuguese"
+            ],
+            currentProfile: [
+                "nativeLanguage": "russian",
+                "learningLanguage": "japanese"
+            ]
+        )
+
+        XCTAssertEqual(summary.nativeLanguage, AppLanguage.russian)
+        XCTAssertEqual(summary.practiceLanguage, AppLanguage.japanese)
+        XCTAssertEqual(summary.currentUserRole, ChatParticipantRole.learner(.japanese))
+        XCTAssertEqual(summary.participantRole, ChatParticipantRole.learner(.portuguese))
     }
 }

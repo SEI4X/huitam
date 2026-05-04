@@ -118,12 +118,6 @@ final class FirebaseFriendService: FriendServicing {
         try await FirebaseAsync.setData(
             [
                 "participantUIDs": [inviterUID, uid],
-                "roles": [
-                    inviterUID: FirebaseDocumentMapper.data(from: ChatParticipantRole.learner(invite.inviterLearningLanguage)),
-                    uid: FirebaseDocumentMapper.data(from: role)
-                ],
-                "nativeLanguage": guestProfile.nativeLanguage.rawValue,
-                "practiceLanguage": role.learningLanguage?.rawValue as Any,
                 "lastMessagePreview": "",
                 "unreadCounts": [inviterUID: 0, uid: 0],
                 "createdAt": FieldValue.serverTimestamp(),
@@ -196,11 +190,13 @@ final class FirebaseFriendService: FriendServicing {
     private func chatSummary(chatID: String, participantUID: String, currentUID uid: String) async throws -> ChatSummary {
         let chatSnapshot = try await FirebaseAsync.getDocument(db.collection("chats").document(chatID))
         let profileSnapshot = try await FirebaseAsync.getDocument(db.collection("users").document(participantUID))
+        let currentProfileSnapshot = try await FirebaseAsync.getDocument(db.collection("users").document(uid))
         return try FirebaseDocumentMapper.chatSummary(
             documentID: chatID,
             data: chatSnapshot.data() ?? [:],
             currentUID: uid,
-            participantProfile: profileSnapshot.data() ?? [:]
+            participantProfile: profileSnapshot.data() ?? [:],
+            currentProfile: currentProfileSnapshot.data() ?? [:]
         )
     }
 }

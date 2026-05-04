@@ -20,6 +20,7 @@ enum ChatsListSheet: Identifiable, Equatable {
 final class ChatsListViewModel {
     private let chatService: ChatServicing
     private let presenceService: PresenceServicing
+    private var chatUpdatesTask: Task<Void, Never>?
     private var presenceTasksByUserID: [String: Task<Void, Never>] = [:]
 
     private(set) var chats: [ChatSummary] = []
@@ -60,20 +61,40 @@ final class ChatsListViewModel {
     }
 
     func startObservingChats() async {
+        if chatUpdatesTask != nil {
+            return
+        }
+
         isLoading = true
         errorMessage = nil
 
-        for await result in chatService.chatSummaryUpdates() {
-            switch result {
-            case let .success(chats):
-                self.chats = chats
-                await startObservingPresence()
-                isLoading = false
-            case let .failure(error):
-                errorMessage = AppErrorMessage.userFacing(error)
-                isLoading = false
+        chatUpdatesTask = Task { [chatService, weak self] in
+            for await result in chatService.chatSummaryUpdates() {
+                guard Task.isCancelled == false else { return }
+                await MainActor.run {
+                    guard let self else { return }
+                    switch result {
+                    case let .success(chats):
+                        self.chats = chats
+                        self.isLoading = false
+                    case let .failure(error):
+                        self.errorMessage = AppErrorMessage.userFacing(error)
+                        self.isLoading = false
+                    }
+                }
+
+                if case .success = result {
+                    await self?.startObservingPresence()
+                }
             }
         }
+
+        await Task.yield()
+    }
+
+    func stopObservingChats() {
+        chatUpdatesTask?.cancel()
+        chatUpdatesTask = nil
     }
 
     func startObservingPresence() async {
